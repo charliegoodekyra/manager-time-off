@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="utf-8">
+
   <meta
     name="viewport"
     content="width=device-width,initial-scale=1,viewport-fit=cover"
@@ -33,7 +34,6 @@
         "Segoe UI",
         Arial,
         sans-serif;
-
       background: var(--bg);
       color: #111827;
     }
@@ -85,10 +85,6 @@
 
     .between {
       justify-content: space-between;
-    }
-
-    .grow {
-      flex: 1;
     }
 
     .grid2 {
@@ -249,9 +245,7 @@
 
 <main>
 
-  <!-- ===================================================== -->
   <!-- HOME -->
-  <!-- ===================================================== -->
 
   <section id="homeView">
 
@@ -277,9 +271,7 @@
   </section>
 
 
-  <!-- ===================================================== -->
-  <!-- MANAGER REQUEST FORM -->
-  <!-- ===================================================== -->
+  <!-- REQUEST FORM -->
 
   <section
     id="requestView"
@@ -398,9 +390,7 @@
   </section>
 
 
-  <!-- ===================================================== -->
   <!-- LOGIN -->
-  <!-- ===================================================== -->
 
   <section
     id="loginView"
@@ -446,9 +436,7 @@
   </section>
 
 
-  <!-- ===================================================== -->
   <!-- ADMIN -->
-  <!-- ===================================================== -->
 
   <section
     id="adminView"
@@ -476,8 +464,6 @@
 
     </div>
 
-
-    <!-- REQUESTS -->
 
     <div class="card">
 
@@ -609,9 +595,7 @@
     </div>
 
 
-    <!-- =================================================== -->
-    <!-- MANAGE STORES + MANAGERS -->
-    <!-- =================================================== -->
+    <!-- MANAGE PANEL -->
 
     <div
       id="managePanel"
@@ -758,7 +742,7 @@ let managers = [];
 
 
 // ============================================================
-// GENERAL UI
+// UI HELPERS
 // ============================================================
 
 function show(id) {
@@ -768,14 +752,16 @@ function show(id) {
     'requestView',
     'loginView',
     'adminView'
-  ].forEach(x => {
+  ].forEach(
+    x => {
 
-    $(x).classList.toggle(
-      'hidden',
-      x !== id
-    );
+      $(x).classList.toggle(
+        'hidden',
+        x !== id
+      );
 
-  });
+    }
+  );
 
 }
 
@@ -789,9 +775,10 @@ function toast(text) {
     'block';
 
   setTimeout(
-    () =>
+    () => {
       $('toast').style.display =
-        'none',
+        'none';
+    },
     1800
   );
 
@@ -872,26 +859,61 @@ async function route() {
     location.pathname;
 
 
+  // ----------------------------------------------------------
+  // CLEAN ROTHWELL URL
+  // ----------------------------------------------------------
+
+  if (
+    path === '/rothwell'
+  ) {
+
+    show(
+      'requestView'
+    );
+
+
+    await loadPublicStore(
+      'rothwell-a14-eastbound'
+    );
+
+
+    return;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // STANDARD STORE REQUEST URLS
+  // ----------------------------------------------------------
+
   const requestMatch =
     path.match(
       /^\/request\/([a-z0-9-]+)$/
     );
 
 
-  if (requestMatch) {
+  if (
+    requestMatch
+  ) {
 
     show(
       'requestView'
     );
 
+
     await loadPublicStore(
       requestMatch[1]
     );
+
 
     return;
 
   }
 
+
+  // ----------------------------------------------------------
+  // ADMIN
+  // ----------------------------------------------------------
 
   if (
     path === '/admin'
@@ -903,7 +925,9 @@ async function route() {
       );
 
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
 
       show(
         'loginView'
@@ -925,6 +949,7 @@ async function route() {
 
     await loadAdmin();
 
+
     return;
 
   }
@@ -938,7 +963,7 @@ async function route() {
 
 
 // ============================================================
-// PUBLIC REQUEST PAGE
+// PUBLIC STORE
 // ============================================================
 
 async function loadPublicStore(
@@ -956,7 +981,9 @@ async function loadPublicStore(
     await response.json();
 
 
-  if (!response.ok) {
+  if (
+    !response.ok
+  ) {
 
     $('requestView').innerHTML =
       '<div class="card">Store not found.</div>';
@@ -995,7 +1022,7 @@ async function loadPublicStore(
 
 
 // ============================================================
-// REQUEST FORM
+// REQUEST TYPE
 // ============================================================
 
 window.typeChanged =
@@ -1014,7 +1041,9 @@ window.typeChanged =
       );
 
 
-    if (isHoliday) {
+    if (
+      isHoliday
+    ) {
 
       startChanged();
 
@@ -1042,6 +1071,10 @@ window.startChanged =
 
   };
 
+
+// ============================================================
+// SUBMIT REQUEST
+// ============================================================
 
 window.submitRequest =
   async () => {
@@ -1079,7 +1112,8 @@ window.submitRequest =
       await fetch(
         '/api/public/requests',
         {
-          method: 'POST',
+          method:
+            'POST',
 
           headers: {
             'content-type':
@@ -1098,7 +1132,9 @@ window.submitRequest =
       await response.json();
 
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
 
       $('submitMessage').textContent =
         data.error ||
@@ -1117,10 +1153,6 @@ window.submitRequest =
       data.request;
 
 
-    const colour =
-      request.status;
-
-
     let message;
 
 
@@ -1134,7 +1166,6 @@ window.submitRequest =
 
     }
 
-
     else if (
       request.status ===
       'PENDING'
@@ -1144,7 +1175,6 @@ window.submitRequest =
         'Pending manual approval. You will receive an email when a decision is made.';
 
     }
-
 
     else if (
       request.status ===
@@ -1156,7 +1186,6 @@ window.submitRequest =
 
     }
 
-
     else {
 
       message =
@@ -1167,7 +1196,9 @@ window.submitRequest =
 
     $('resultCard').innerHTML = `
 
-      <span class="pill ${colour}">
+      <span
+        class="pill ${request.status}"
+      >
         ${request.status}
       </span>
 
@@ -1204,7 +1235,8 @@ window.login =
       await fetch(
         '/api/auth/login',
         {
-          method: 'POST',
+          method:
+            'POST',
 
           headers: {
             'content-type':
@@ -1224,7 +1256,9 @@ window.login =
       await response.json();
 
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
 
       $('loginMessage').textContent =
         data.error;
@@ -1246,7 +1280,8 @@ window.logout =
     await fetch(
       '/api/auth/logout',
       {
-        method: 'POST'
+        method:
+          'POST'
       }
     );
 
@@ -1289,7 +1324,7 @@ async function loadAdmin() {
 
 
 // ============================================================
-// STORES
+// LOAD STORES
 // ============================================================
 
 async function loadStores() {
@@ -1392,9 +1427,7 @@ function renderStores() {
   if (
     !$('storeRows')
   ) {
-
     return;
-
   }
 
 
@@ -1491,14 +1524,25 @@ function renderStores() {
 
 
 // ============================================================
-// COPY STORE REQUEST LINK
+// COPY REQUEST LINK
 // ============================================================
 
 window.copyRequestLink =
   async storeSlug => {
 
-    const link =
+    let link =
       `${location.origin}/request/${storeSlug}`;
+
+
+    if (
+      storeSlug ===
+      'rothwell-a14-eastbound'
+    ) {
+
+      link =
+        `${location.origin}/rothwell`;
+
+    }
 
 
     await navigator
@@ -1537,7 +1581,8 @@ window.addStore =
       await fetch(
         '/api/admin/stores',
         {
-          method: 'POST',
+          method:
+            'POST',
 
           headers: {
             'content-type':
@@ -1556,7 +1601,9 @@ window.addStore =
       await response.json();
 
 
-    if (!response.ok) {
+    if (
+      !response.ok
+    ) {
 
       alert(
         data.error
@@ -1578,7 +1625,7 @@ window.addStore =
 
 
 // ============================================================
-// SET STORE 5-DIGIT PASSWORD
+// STORE CODE
 // ============================================================
 
 window.setStorePassword =
@@ -1693,7 +1740,7 @@ window.setStorePassword =
 
 
 // ============================================================
-// REQUEST FILTERS
+// QUICK FILTER
 // ============================================================
 
 window.quickFilter =
@@ -1777,7 +1824,9 @@ async function loadRequests() {
     await response.json();
 
 
-  if (!response.ok) {
+  if (
+    !response.ok
+  ) {
 
     toast(
       data.error ||
@@ -1803,9 +1852,7 @@ async function loadRequests() {
               <div class="requestTitle">
 
                 ${esc(request.manager_name)}
-
                 •
-
                 ${esc(request.request_type)}
 
               </div>
@@ -1818,9 +1865,7 @@ async function loadRequests() {
                 <br>
 
                 ${esc(request.start_date)}
-
                 →
-
                 ${esc(request.end_date)}
 
                 <br>
@@ -1852,44 +1897,38 @@ async function loadRequests() {
 
           ${
             request.notes
-
-            ? `
-              <p>
-                ${esc(request.notes)}
-              </p>
-            `
-
-            : ''
+              ? `
+                <p>
+                  ${esc(request.notes)}
+                </p>
+              `
+              : ''
           }
 
 
           ${
             request.conflict_date
-
-            ? `
-              <p class="muted">
-                Conflict date:
-                ${esc(request.conflict_date)}
-              </p>
-            `
-
-            : ''
+              ? `
+                <p class="muted">
+                  Conflict date:
+                  ${esc(request.conflict_date)}
+                </p>
+              `
+              : ''
           }
 
 
           ${
             request.calendar_sync_status ===
               'ERROR'
-
-            ? `
-              <p style="color:#b3261e">
-                <b>
-                  Calendar sync failed
-                </b>
-              </p>
-            `
-
-            : ''
+              ? `
+                <p style="color:#b3261e">
+                  <b>
+                    Calendar sync failed
+                  </b>
+                </p>
+              `
+              : ''
           }
 
 
@@ -1899,33 +1938,33 @@ async function loadRequests() {
             request.status ===
               'PENDING'
 
-            ? `
+              ? `
 
-              <div
-                class="row"
-                style="margin-top:10px"
-              >
-
-                <button
-                  class="primary"
-                  onclick="decide(${request.id},'APPROVE')"
+                <div
+                  class="row"
+                  style="margin-top:10px"
                 >
-                  Approve
-                </button>
+
+                  <button
+                    class="primary"
+                    onclick="decide(${request.id},'APPROVE')"
+                  >
+                    Approve
+                  </button>
 
 
-                <button
-                  class="danger"
-                  onclick="decide(${request.id},'REJECT')"
-                >
-                  Reject
-                </button>
+                  <button
+                    class="danger"
+                    onclick="decide(${request.id},'REJECT')"
+                  >
+                    Reject
+                  </button>
 
-              </div>
+                </div>
 
-            `
+              `
 
-            : ''
+              : ''
           }
 
         </div>
@@ -1942,7 +1981,7 @@ async function loadRequests() {
 
 
 // ============================================================
-// APPROVE / REJECT DAY OFF
+// APPROVE / REJECT
 // ============================================================
 
 window.decide =
@@ -2036,7 +2075,7 @@ window.toggleManage =
 
 
 // ============================================================
-// MANAGERS
+// LOAD MANAGERS
 // ============================================================
 
 async function loadManagers() {
@@ -2045,10 +2084,10 @@ async function loadManagers() {
     $('managerStore').value;
 
 
-  if (!storeId) {
-
+  if (
+    !storeId
+  ) {
     return;
-
   }
 
 
