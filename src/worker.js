@@ -448,7 +448,7 @@ async function notifyManager(
             'DAY OFF'
               ? 'day off'
               : 'holiday'
-          } request has been approved. Your time off has been added to the Manager Holiday Calendar.`
+          } request has been approved.`
       }
     );
 
@@ -643,175 +643,6 @@ async function notifyApprovers(
 
 
 // ============================================================
-// GOOGLE CALENDAR BRIDGE
-// ============================================================
-
-async function calendarBridge(
-  env,
-  payload
-) {
-
-  if (
-    !env.APPS_SCRIPT_BRIDGE_URL ||
-    !env.APPS_SCRIPT_BRIDGE_SECRET
-  ) {
-
-    return {
-      ok: false,
-      error:
-        'Calendar bridge is not configured'
-    };
-
-  }
-
-
-  try {
-
-    const r =
-      await fetch(
-        env.APPS_SCRIPT_BRIDGE_URL,
-        {
-          method:
-            'POST',
-
-          headers: {
-            'content-type':
-              'application/json'
-          },
-
-          body:
-            JSON.stringify({
-              ...payload,
-
-              secret:
-                env.APPS_SCRIPT_BRIDGE_SECRET
-            })
-        }
-      );
-
-
-    const text =
-      await r.text();
-
-
-    let j;
-
-
-    try {
-
-      j =
-        JSON.parse(text);
-
-    } catch {
-
-      j = {
-        ok: false,
-        error: text
-      };
-
-    }
-
-
-    return j;
-
-
-  } catch (e) {
-
-    return {
-      ok: false,
-      error:
-        String(
-          e?.message ||
-          e
-        )
-    };
-
-  }
-
-}
-
-
-// ============================================================
-// CREATE CALENDAR EVENT
-// ============================================================
-
-async function createCalendar(
-  env,
-  store,
-  req
-) {
-
-  const result =
-    await calendarBridge(
-      env,
-      {
-        action:
-          'create_event',
-
-        calendar_name:
-          store.calendar_name ||
-          'Manager Holiday Calendar',
-
-        manager:
-          req.manager_name,
-
-        request_type:
-          req.request_type,
-
-        start_date:
-          req.start_date,
-
-        end_date:
-          req.end_date,
-
-        notes:
-          req.notes ||
-          ''
-      }
-    );
-
-
-  if (
-    result?.ok
-  ) {
-
-    await env.DB
-      .prepare(`
-        UPDATE requests
-        SET
-          calendar_event_id=?,
-          calendar_sync_status='SYNCED'
-        WHERE id=?
-      `)
-      .bind(
-        result.event_id ||
-          '',
-        req.id
-      )
-      .run();
-
-  } else {
-
-    await env.DB
-      .prepare(`
-        UPDATE requests
-        SET calendar_sync_status='ERROR'
-        WHERE id=?
-      `)
-      .bind(
-        req.id
-      )
-      .run();
-
-  }
-
-
-  return result;
-
-}
-
-
-// ============================================================
 // HOLIDAY CONFLICT CHECK
 // ============================================================
 
@@ -947,6 +778,25 @@ async function firstClosedMonth(env,storeId,startDate,endDate){
   return null;
 }
 
+function noGoMessage(zone){
+  const reason=String(zone?.reason||'').trim();
+  return reason
+    ? `Holiday requests are not available for the selected dates (${reason}). Please choose alternative dates.`
+    : 'Holiday requests are not available for the selected dates due to a restricted booking period. Please choose alternative dates.';
+}
+
+async function firstNoGoZone(env,storeId,startDate,endDate){
+  return await env.DB.prepare(`
+    SELECT id,store_id,start_date,end_date,reason,created_at,created_by
+    FROM holiday_no_go_zones
+    WHERE store_id=?
+      AND start_date<=?
+      AND end_date>=?
+    ORDER BY start_date ASC,id ASC
+    LIMIT 1
+  `).bind(storeId,endDate,startDate).first();
+}
+
 async function createTimeOffRequest(env,{store,manager,type,startDate,endDate,notes,origin}){
   const start=parseISODate(startDate);
   const end=parseISODate(endDate);
@@ -982,7 +832,7 @@ async function createTimeOffRequest(env,{store,manager,type,startDate,endDate,no
     status,
     conflict,
     notes,
-    status==='APPROVED'?'PENDING_SYNC':'NOT_REQUIRED',
+    'NOT_REQUIRED',
     submitted
   ).run();
 
@@ -1000,12 +850,10 @@ async function createTimeOffRequest(env,{store,manager,type,startDate,endDate,no
     notes
   };
 
-  let calendar=null;
-  if(status==='APPROVED')calendar=await createCalendar(env,store,req);
   await notifyManager(env,req);
   if(status==='PENDING')await notifyApprovers(env,req,origin);
 
-  return {request:req,calendar};
+  return {request:req};
 }
 
 // ============================================================
@@ -1250,7 +1098,17 @@ export default {
           return json({error:'Store and valid dates are required'},400);
         }
         const block=await firstClosedMonth(env,storeId,startDate,endDate);
-        return json({closed:!!block,block});
+        const type=String(url.searchParams.get('request_type')||'').toUpperCase();
+        const noGo=type==='HOLIDAY'
+          ? await firstNoGoZone(env,storeId,startDate,endDate)
+          : null;
+        return json({
+          closed:!!block,
+          block,
+          no_go:!!noGo,
+          no_go_zone:noGo,
+          no_go_message:noGo?noGoMessage(noGo):null
+        });
       }
 
       // ======================================================
@@ -1407,6 +1265,27 @@ export default {
         }
 
 
+        if (type === 'HOLIDAY') {
+          const noGo = await firstNoGoZone(
+            env,
+            store.id,
+            body.start_date,
+            body.end_date
+          );
+
+          if (noGo) {
+            return json(
+              {
+                error: noGoMessage(noGo),
+                code: 'HOLIDAY_NO_GO_ZONE',
+                no_go_zone: noGo
+              },
+              409
+            );
+          }
+        }
+
+
         const notes =
           String(
             body.notes ||
@@ -1501,10 +1380,7 @@ export default {
               status,
               conflict,
               notes,
-              status ===
-                'APPROVED'
-                ? 'PENDING_SYNC'
-                : 'NOT_REQUIRED',
+              'NOT_REQUIRED',
               submitted
             )
             .run();
@@ -1550,25 +1426,6 @@ export default {
         };
 
 
-        let calendar =
-          null;
-
-
-        if (
-          status ===
-          'APPROVED'
-        ) {
-
-          calendar =
-            await createCalendar(
-              env,
-              store,
-              req
-            );
-
-        }
-
-
         await notifyManager(
           env,
           req
@@ -1591,8 +1448,7 @@ export default {
 
         return json({
           ok: true,
-          request: req,
-          calendar
+          request: req
         });
 
       }
@@ -1708,13 +1564,12 @@ export default {
                 slug,
                 code,
                 email,
-                calendar_name,
                 active,
                 created_at
               )
               VALUES
               (
-                ?,?,?,?,?,1,?
+                ?,?,?,?,1,?
               )
             `)
             .bind(
@@ -1733,11 +1588,6 @@ export default {
               )
                 .trim() ||
                 null,
-              String(
-                b.calendar_name ||
-                'Manager Holiday Calendar'
-              )
-                .trim(),
               now()
             )
             .run();
@@ -1781,7 +1631,6 @@ export default {
               slug=?,
               code=?,
               email=?,
-              calendar_name=?,
               active=?
             WHERE id=?
           `)
@@ -1813,12 +1662,6 @@ export default {
             )
               .trim() ||
               null,
-
-            String(
-              b.calendar_name ||
-              'Manager Holiday Calendar'
-            )
-              .trim(),
 
             b.active ===
               false
@@ -2117,7 +1960,13 @@ export default {
         if(!start||!end||end<start)return json({error:'Check the requested dates'},400);
         const notes=String(body.notes||'').trim().slice(0,2000);
 
+        if(type==='HOLIDAY'){
+          const noGo=await firstNoGoZone(env,store.id,body.start_date,body.end_date);
+          if(noGo)return json({error:noGoMessage(noGo),code:'HOLIDAY_NO_GO_ZONE',no_go_zone:noGo},409);
+        }
+
         // Deliberately bypasses month closure: authorised admin exception.
+        // No-go zones still apply to Holiday requests.
         const result=await createTimeOffRequest(env,{
           store,
           manager,
@@ -2128,6 +1977,129 @@ export default {
           origin:url.origin
         });
         return json({ok:true,...result,added_on_behalf:true});
+      }
+
+      // ======================================================
+      // HOLIDAY NO-GO ZONES — ADMIN
+      // ======================================================
+
+      if (
+        p === '/api/admin/no-go-zones' &&
+        request.method === 'GET'
+      ) {
+        const storeId=Number(url.searchParams.get('store_id')||0);
+        const year=Number(url.searchParams.get('year')||0);
+        const month=Number(url.searchParams.get('month')||0);
+        if(!storeId||!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){
+          return json({error:'Store, year and month are required'},400);
+        }
+        const monthStart=`${year}-${String(month).padStart(2,'0')}-01`;
+        const nextMonth=month===12?`${year+1}-01-01`:`${year}-${String(month+1).padStart(2,'0')}-01`;
+        const {results}=await env.DB.prepare(`
+          SELECT id,store_id,start_date,end_date,reason,created_at,created_by
+          FROM holiday_no_go_zones
+          WHERE store_id=?
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,id ASC
+        `).bind(storeId,nextMonth,monthStart).all();
+        return json({zones:results||[]});
+      }
+
+      if (
+        p === '/api/admin/no-go-zones' &&
+        request.method === 'POST'
+      ) {
+        const b=await request.json();
+        const storeId=Number(b.store_id||0);
+        const startDate=String(b.start_date||'');
+        const endDate=String(b.end_date||'');
+        const start=parseISODate(startDate);
+        const end=parseISODate(endDate);
+        if(!storeId||!start||!end||end<start){
+          return json({error:'Store and valid dates are required'},400);
+        }
+        const store=await env.DB.prepare('SELECT id FROM stores WHERE id=? AND active=1').bind(storeId).first();
+        if(!store)return json({error:'Store not found'},404);
+        const reason=String(b.reason||'').trim().slice(0,500);
+        const createdBy=currentAuth?.role==='group_admin'?'Group admin':'Store manager';
+        const result=await env.DB.prepare(`
+          INSERT INTO holiday_no_go_zones(store_id,start_date,end_date,reason,created_at,created_by)
+          VALUES(?,?,?,?,?,?)
+        `).bind(storeId,startDate,endDate,reason||null,now(),createdBy).run();
+        return json({ok:true,id:result.meta.last_row_id});
+      }
+
+      const noGoDelete=p.match(/^\/api\/admin\/no-go-zones\/(\d+)$/);
+      if(noGoDelete&&request.method==='DELETE'){
+        const id=Number(noGoDelete[1]);
+        const row=await env.DB.prepare('SELECT store_id FROM holiday_no_go_zones WHERE id=?').bind(id).first();
+        if(!row)return json({error:'No-go zone not found'},404);
+        if(currentAuth?.role==='store'&&Number(row.store_id)!==Number(currentAuth.store_id)){
+          return json({error:'Store access denied'},403);
+        }
+        await env.DB.prepare('DELETE FROM holiday_no_go_zones WHERE id=?').bind(id).run();
+        return json({ok:true});
+      }
+
+      // ======================================================
+      // HOLIDAY CALENDAR — ADMIN
+      // ======================================================
+
+      if(
+        p === '/api/admin/holiday-calendar' &&
+        request.method === 'GET'
+      ){
+        const storeId=Number(url.searchParams.get('store_id')||0);
+        const year=Number(url.searchParams.get('year')||0);
+        const month=Number(url.searchParams.get('month')||0);
+        if(!storeId||!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){
+          return json({error:'Store, year and month are required'},400);
+        }
+        const monthStart=`${year}-${String(month).padStart(2,'0')}-01`;
+        const nextMonth=month===12?`${year+1}-01-01`:`${year}-${String(month+1).padStart(2,'0')}-01`;
+        const {results:holidays}=await env.DB.prepare(`
+          SELECT id,manager_id,manager_name,start_date,end_date,notes,status
+          FROM requests
+          WHERE store_id=?
+            AND request_type='HOLIDAY'
+            AND status='APPROVED'
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,manager_name COLLATE NOCASE
+        `).bind(storeId,nextMonth,monthStart).all();
+        const {results:zones}=await env.DB.prepare(`
+          SELECT id,start_date,end_date,reason,created_at,created_by
+          FROM holiday_no_go_zones
+          WHERE store_id=?
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,id ASC
+        `).bind(storeId,nextMonth,monthStart).all();
+        return json({holidays:holidays||[],zones:zones||[]});
+      }
+
+      // ======================================================
+      // DELETE FUTURE REQUEST — ADMIN
+      // ======================================================
+
+      const deleteRequest=p.match(/^\/api\/admin\/requests\/(\d+)$/);
+      if(deleteRequest&&request.method==='DELETE'){
+        const id=Number(deleteRequest[1]);
+        const row=await env.DB.prepare(`
+          SELECT id,store_id,manager_name,request_type,start_date,end_date,status
+          FROM requests WHERE id=?
+        `).bind(id).first();
+        if(!row)return json({error:'Request not found'},404);
+        if(currentAuth?.role==='store'&&Number(row.store_id)!==Number(currentAuth.store_id)){
+          return json({error:'Request not found'},404);
+        }
+        const today=new Date().toISOString().slice(0,10);
+        if(String(row.start_date)<today){
+          return json({error:'Only future requests can be deleted'},409);
+        }
+        await env.DB.prepare('DELETE FROM requests WHERE id=?').bind(id).run();
+        return json({ok:true,deleted:row});
       }
 
       // ======================================================
@@ -2306,8 +2278,7 @@ export default {
             .prepare(`
               SELECT
                 r.*,
-                s.name AS store_name,
-                s.calendar_name
+                s.name AS store_name
               FROM requests r
               JOIN stores s
                 ON s.id=r.store_id
@@ -2383,10 +2354,7 @@ export default {
             now(),
             decidedBy,
 
-            newStatus ===
-              'APPROVED'
-              ? 'PENDING_SYNC'
-              : 'NOT_REQUIRED',
+            'NOT_REQUIRED',
 
             req.id
           )
@@ -2400,29 +2368,6 @@ export default {
         req.decided_by =
           decidedBy;
 
-
-        let calendar =
-          null;
-
-
-        if (
-          newStatus ===
-          'APPROVED'
-        ) {
-
-          calendar =
-            await createCalendar(
-              env,
-              {
-                calendar_name:
-                  req.calendar_name
-              },
-              req
-            );
-
-        }
-
-
         await notifyManager(
           env,
           req
@@ -2431,8 +2376,7 @@ export default {
 
         return json({
           ok: true,
-          request: req,
-          calendar
+          request: req
         });
 
       }

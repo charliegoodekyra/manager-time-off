@@ -1,26 +1,21 @@
 import fs from 'node:fs';
-
 const worker=fs.readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const auth=fs.readFileSync(new URL('../src/auth.js',import.meta.url),'utf8');
 const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const schema=fs.readFileSync(new URL('../schema.sql',import.meta.url),'utf8');
-const bridge=fs.readFileSync(new URL('../google-calendar-bridge/Code.gs',import.meta.url),'utf8');
-
 const must=(text,needle,label)=>{if(!text.includes(needle))throw new Error(`Missing ${label}: ${needle}`);};
-
-must(worker,"/api/public/request-blocks",'public month-block endpoint');
-must(worker,"/api/admin/request-blocks",'admin month-block endpoint');
-must(worker,"/api/admin/requests/on-behalf",'on-behalf endpoint');
-must(worker,"/bookings",'upcoming booking endpoint');
-must(auth,"/bookings",'public bookings auth allowance');
-must(schema,"request_month_blocks",'month block schema');
-must(html,"Close Requests",'close request control');
-must(html,"Reopen Requests",'reopen request control');
-must(html,"Add Request on Behalf of Manager",'on behalf control');
-must(html,"Multiple consecutive weeks must be booked separately.",'consecutive week hint');
-must(html,"Your upcoming approved holidays",'upcoming bookings UI');
-
-console.log('Manager Time Off smoke checks passed.');
-
-if(html.includes('Remove week')) throw new Error('Remove week UI should not exist');
-if(worker.includes("action:'delete_event'")) throw new Error('delete_event worker action should not exist');
+must(worker,'/api/admin/no-go-zones','no-go admin endpoint');
+must(worker,'/api/admin/holiday-calendar','holiday calendar endpoint');
+must(worker,'HOLIDAY_NO_GO_ZONE','no-go holiday enforcement');
+must(worker,"request.method==='DELETE'",'future delete endpoint');
+must(auth,'/api/admin/holiday-calendar','calendar auth allowance');
+must(schema,'holiday_no_go_zones','no-go schema');
+must(html,'Holiday calendar','holiday calendar UI');
+must(html,'Add No Go Zone','no-go UI');
+must(html,'Delete future request','future delete UI');
+must(html,'Multiple consecutive weeks must be booked separately.','consecutive week hint');
+must(html,'Your upcoming approved holidays','upcoming bookings UI');
+if(worker.includes('APPS_SCRIPT_BRIDGE_URL'))throw new Error('Google Calendar bridge should be removed');
+if(worker.includes('createCalendar('))throw new Error('Calendar creation should be removed');
+if(html.includes('Calendar sync failed'))throw new Error('Calendar sync UI should be removed');
+console.log('Manager Time Off database-only smoke checks passed.');

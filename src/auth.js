@@ -156,6 +156,34 @@ export async function guard(req,env){
     if(Number(body.store_id)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
   }
 
+  if(p==='/api/admin/no-go-zones'&&auth.role==='store'){
+    if(['GET','HEAD'].includes(req.method)){
+      const requested=url.searchParams.get('store_id');
+      if(requested&&Number(requested)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
+      url.searchParams.set('store_id',String(auth.store_id));req=new Request(url,req);
+    }else if(req.method==='POST'){
+      let body={};try{body=await req.clone().json();}catch{}
+      if(Number(body.store_id)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
+    }
+  }
+  if(p==='/api/admin/holiday-calendar'&&auth.role==='store'){
+    const requested=url.searchParams.get('store_id');
+    if(requested&&Number(requested)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
+    url.searchParams.set('store_id',String(auth.store_id));req=new Request(url,req);
+  }
+
+  const noGoDelete=p.match(/^\/api\/admin\/no-go-zones\/(\d+)$/);
+  if(noGoDelete&&auth.role==='store'){
+    const row=await env.DB.prepare('SELECT store_id FROM holiday_no_go_zones WHERE id=?').bind(Number(noGoDelete[1])).first();
+    if(!row||Number(row.store_id)!==auth.store_id)return {response:reply({error:'No-go zone not found'},404)};
+  }
+
+  const requestDelete=p.match(/^\/api\/admin\/requests\/(\d+)$/);
+  if(requestDelete&&req.method==='DELETE'){
+    const row=await env.DB.prepare('SELECT store_id FROM requests WHERE id=?').bind(Number(requestDelete[1])).first();
+    if(!row||(auth.role==='store'&&Number(row.store_id)!==auth.store_id))return {response:reply({error:'Request not found'},404)};
+  }
+
   const decision=p.match(/^\/api\/admin\/requests\/(\d+)\/decision$/);
   if(decision){
     const row=await env.DB.prepare('SELECT store_id FROM requests WHERE id=?').bind(Number(decision[1])).first();
@@ -171,6 +199,10 @@ export async function guard(req,env){
     p==='/api/admin/requests' ||
     p==='/api/admin/request-blocks' ||
     p==='/api/admin/requests/on-behalf' ||
+    p==='/api/admin/no-go-zones' ||
+    /^\/api\/admin\/no-go-zones\/\d+$/.test(p) ||
+    p==='/api/admin/holiday-calendar' ||
+    (requestDelete && req.method==='DELETE') ||
     decision;
   if(!allowed)return {response:reply({error:'Not found'},404)};
   return {auth,request:req};

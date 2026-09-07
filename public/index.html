@@ -244,6 +244,18 @@ button{
   line-height:1.45
 }
 
+.holidayCalendarToolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.holidayCalendarGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:12px}
+.calendarDow{font-size:11px;font-weight:800;color:var(--muted);text-align:center;padding:5px}
+.calendarDay{min-height:112px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:7px;overflow:hidden}
+.calendarDay.outside{background:#f8fafc;color:#94a3b8}
+.calendarDay.noGo{background:#fff4f3;border-color:#f3b7b2}
+.calendarDate{font-size:12px;font-weight:900;margin-bottom:5px}
+.calendarEvent{font-size:11px;line-height:1.25;padding:4px 5px;border-radius:6px;margin-top:4px;background:#e8f5e9;color:#166534;font-weight:700}
+.calendarNoGo{font-size:11px;line-height:1.25;padding:4px 5px;border-radius:6px;margin-top:4px;background:#b3261e;color:white;font-weight:800}
+.zoneRow{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:8px}
+@media(max-width:700px){.holidayCalendarGrid{gap:3px}.calendarDay{min-height:86px;padding:4px}.calendarEvent,.calendarNoGo{font-size:9px;padding:3px}.calendarDow{font-size:9px}}
+
 #toast{
   position:fixed;
   bottom:20px;
@@ -434,7 +446,7 @@ button{
 
     <div id="upcomingBookings" class="bookingPanel hidden">
       <div class="bookingPanelTitle">Your upcoming approved holidays</div>
-      <div class="muted" style="margin-bottom:8px">Only future approved holiday weeks are shown. Check the Manager Holiday Calendar before booking another week.</div>
+      <div class="muted" style="margin-bottom:8px">Only future approved holiday weeks are shown.</div>
       <div id="upcomingBookingsList"></div>
     </div>
 
@@ -550,7 +562,7 @@ button{
       </b>
 
       <div class="muted">
-        Review Day Off requests and manage time-off records.
+        Review requests, manage the Holiday calendar and control booking availability.
       </div>
 
     </div>
@@ -634,6 +646,66 @@ button{
 
     <button class="primary" style="margin-top:12px" onclick="submitOnBehalf()">Add Request</button>
     <p id="onBehalfMessage"></p>
+  </div>
+
+
+  <!-- HOLIDAY CALENDAR -->
+
+  <div class="card">
+    <div class="row between">
+      <div>
+        <h2 style="margin:0">Holiday calendar</h2>
+        <div class="muted">Approved holidays and Holiday no-go zones from the database.</div>
+      </div>
+      <button class="secondary" onclick="openNoGoPanel()">+ Add No Go Zone</button>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>Store</label>
+        <select id="calendarStore" onchange="loadHolidayCalendar()"></select>
+      </div>
+      <div>
+        <label>Month</label>
+        <input id="calendarMonth" type="month" onchange="loadHolidayCalendar()">
+      </div>
+    </div>
+
+    <div class="holidayCalendarToolbar">
+      <button class="secondary" onclick="changeCalendarMonth(-1)">← Previous</button>
+      <button class="secondary" onclick="calendarToday()">This month</button>
+      <button class="secondary" onclick="changeCalendarMonth(1)">Next →</button>
+    </div>
+
+    <div id="holidayCalendarGrid" class="holidayCalendarGrid"></div>
+
+    <h3 style="margin-bottom:4px;margin-top:18px">No Go Zones</h3>
+    <div class="muted">Holiday requests touching these dates are blocked. Day Off requests are unaffected.</div>
+    <div id="noGoZoneRows"></div>
+  </div>
+
+  <div id="noGoPanel" class="card hidden">
+    <div class="row between">
+      <div>
+        <h2 style="margin:0">Add Holiday No Go Zone</h2>
+        <div class="muted">Blocks Holiday requests only. Day Off requests can still be submitted.</div>
+      </div>
+      <button class="secondary" onclick="closeNoGoPanel()">Close</button>
+    </div>
+    <div class="grid2">
+      <div>
+        <label>Start date</label>
+        <input id="noGoStart" type="date">
+      </div>
+      <div>
+        <label>End date</label>
+        <input id="noGoEnd" type="date">
+      </div>
+    </div>
+    <label>Reason</label>
+    <input id="noGoReason" placeholder="e.g. Christmas trading period">
+    <button class="danger" style="margin-top:12px" onclick="saveNoGoZone()">Add No Go Zone</button>
+    <p id="noGoMessage"></p>
   </div>
 
 
@@ -824,20 +896,6 @@ button{
         <input
           id="newStoreName"
           placeholder="Store name"
-        >
-
-      </div>
-
-
-      <div>
-
-        <label>
-          Calendar name
-        </label>
-
-        <input
-          id="newCalendarName"
-          value="Manager Holiday Calendar"
         >
 
       </div>
@@ -1336,12 +1394,19 @@ window.checkRequestAvailability =
     const q=new URLSearchParams({
       store_id:String(currentStore.id),
       start_date:$("startDate").value,
-      end_date:$("endDate").value
+      end_date:$("endDate").value,
+      request_type:$("requestType").value
     });
     const r=await fetch("/api/public/request-blocks?"+q.toString());
     const j=await r.json();
     if(r.ok&&j.closed){
       notice.textContent=j.block.message;
+      notice.classList.remove("hidden");
+      button.disabled=true;
+      return;
+    }
+    if(r.ok&&j.no_go){
+      notice.textContent=j.no_go_message;
       notice.classList.remove("hidden");
       button.disabled=true;
     }
@@ -1446,7 +1511,7 @@ window.submitRequest =
 
       q.status === "APPROVED"
 
-        ? "Approved automatically and added to the Manager Holiday Calendar."
+        ? "Approved automatically."
 
         : q.status === "PENDING"
 
@@ -1602,7 +1667,9 @@ async function loadAdmin(){
   await loadStores();
 
   setupRequestControls();
+  setupHolidayCalendar();
   await loadRequestControlStatus();
+  await loadHolidayCalendar();
 
   await loadRequests();
 
@@ -1778,6 +1845,13 @@ async function loadStores(){
     $("controlStore").value=activeStores[0].id;
   }
 
+  $("calendarStore").innerHTML =
+    activeStores.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");
+
+  if(currentSession.role!=="group_admin"&&activeStores[0]){
+    $("calendarStore").value=activeStores[0].id;
+  }
+
 
   $("managerStore").innerHTML =
     activeStores.map(
@@ -1878,14 +1952,7 @@ function renderStores(){
                     )}
 
                     <br>
-
-                    Calendar:
-                    ${esc(
-                      s.calendar_name ||
-                      "Manager Holiday Calendar"
-                    )}
-
-                  </div>
+</div>
 
                 </div>
 
@@ -1985,10 +2052,6 @@ window.addStore =
 
       name:
         $("newStoreName").value
-          .trim(),
-
-      calendar_name:
-        $("newCalendarName").value
           .trim()
 
     };
@@ -2684,7 +2747,9 @@ function selectedControlMonth(){
 }
 
 window.requestControlStoreChanged=async()=>{
+  if($('calendarStore'))$('calendarStore').value=$('controlStore').value;
   await loadRequestControlStatus();
+  await loadHolidayCalendar();
   if(!$('onBehalfPanel').classList.contains('hidden'))await loadOnBehalfManagers();
 };
 
@@ -2777,8 +2842,136 @@ window.submitOnBehalf=async()=>{
   $('onBehalfNotes').value='';
   toast('Request added on behalf of manager');
   await loadRequests();
+  await loadHolidayCalendar();
 };
 
+
+/* ========================================================= */
+/* HOLIDAY CALENDAR + NO GO ZONES */
+/* ========================================================= */
+
+function setupHolidayCalendar(){
+  if(!$('calendarMonth').value){
+    const d=new Date();
+    $('calendarMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  }
+}
+
+function selectedCalendarMonth(){
+  const m=String($('calendarMonth').value||'').match(/^(\d{4})-(\d{2})$/);
+  return m?{year:Number(m[1]),month:Number(m[2])}:null;
+}
+
+window.changeCalendarMonth=(delta)=>{
+  const s=selectedCalendarMonth();if(!s)return;
+  const d=new Date(s.year,s.month-1+delta,1);
+  $('calendarMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  loadHolidayCalendar();
+};
+
+window.calendarToday=()=>{
+  const d=new Date();
+  $('calendarMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  loadHolidayCalendar();
+};
+
+function datesOverlap(aStart,aEnd,bStart,bEnd){return aStart<=bEnd&&aEnd>=bStart;}
+
+async function loadHolidayCalendar(){
+  if(!$('calendarStore')||!$('calendarMonth'))return;
+  const storeId=Number($('calendarStore').value||0);
+  const s=selectedCalendarMonth();
+  if(!storeId||!s)return;
+  const q=new URLSearchParams({store_id:String(storeId),year:String(s.year),month:String(s.month)});
+  const r=await fetch('/api/admin/holiday-calendar?'+q.toString());
+  const j=await r.json();
+  if(!r.ok){toast(j.error||'Could not load holiday calendar');return;}
+  renderHolidayCalendar(s.year,s.month,j.holidays||[],j.zones||[]);
+  renderNoGoRows(j.zones||[]);
+}
+
+function renderHolidayCalendar(year,month,holidays,zones){
+  const grid=$('holidayCalendarGrid');
+  const labels=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let out=labels.map(x=>`<div class="calendarDow">${x}</div>`).join('');
+  const first=new Date(year,month-1,1);
+  const mondayIndex=(first.getDay()+6)%7;
+  const start=new Date(year,month-1,1-mondayIndex);
+  for(let i=0;i<42;i++){
+    const d=new Date(start);d.setDate(start.getDate()+i);
+    const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const outside=d.getMonth()!==month-1;
+    const dayZones=zones.filter(z=>iso>=z.start_date&&iso<=z.end_date);
+    const dayHolidays=holidays.filter(h=>iso>=h.start_date&&iso<=h.end_date);
+    out+=`<div class="calendarDay ${outside?'outside':''} ${dayZones.length?'noGo':''}">`+
+      `<div class="calendarDate">${d.getDate()}</div>`+
+      dayZones.map(z=>`<div class="calendarNoGo" title="${esc(z.reason||'No Holiday bookings')}">NO GO${z.reason?': '+esc(z.reason):''}</div>`).join('')+
+      dayHolidays.map(h=>`<div class="calendarEvent">${esc(h.manager_name)}</div>`).join('')+
+      `</div>`;
+  }
+  grid.innerHTML=out;
+}
+
+function renderNoGoRows(zones){
+  $('noGoZoneRows').innerHTML=zones.length?zones.map(z=>`
+    <div class="zoneRow">
+      <div class="row between">
+        <div>
+          <b>${esc(z.start_date)} → ${esc(z.end_date)}</b>
+          <div class="meta">${esc(z.reason||'No Holiday bookings')}</div>
+        </div>
+        <button class="danger" onclick="deleteNoGoZone(${z.id})">Remove</button>
+      </div>
+    </div>`).join(''):'<p class="muted">No no-go zones overlap this month.</p>';
+}
+
+window.openNoGoPanel=()=>{
+  const s=selectedCalendarMonth();
+  if(s){
+    const first=`${s.year}-${String(s.month).padStart(2,'0')}-01`;
+    $('noGoStart').value=first;
+    $('noGoEnd').value=first;
+  }
+  $('noGoReason').value='';
+  $('noGoMessage').textContent='';
+  $('noGoPanel').classList.remove('hidden');
+  $('noGoPanel').scrollIntoView({behavior:'smooth',block:'start'});
+};
+window.closeNoGoPanel=()=>$('noGoPanel').classList.add('hidden');
+
+window.saveNoGoZone=async()=>{
+  const body={
+    store_id:Number($('calendarStore').value||0),
+    start_date:$('noGoStart').value,
+    end_date:$('noGoEnd').value,
+    reason:$('noGoReason').value
+  };
+  const r=await fetch('/api/admin/no-go-zones',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!r.ok){$('noGoMessage').textContent=j.error||'Could not add no-go zone';return;}
+  toast('No Go Zone added');
+  $('noGoPanel').classList.add('hidden');
+  await loadHolidayCalendar();
+};
+
+window.deleteNoGoZone=async(id)=>{
+  if(!confirm('Remove this Holiday No Go Zone?'))return;
+  const r=await fetch(`/api/admin/no-go-zones/${id}`,{method:'DELETE'});
+  const j=await r.json();
+  if(!r.ok){alert(j.error||'Could not remove no-go zone');return;}
+  toast('No Go Zone removed');
+  await loadHolidayCalendar();
+};
+
+window.deleteFutureRequest=async(id)=>{
+  if(!confirm('Permanently delete this future request?'))return;
+  const r=await fetch(`/api/admin/requests/${id}`,{method:'DELETE'});
+  const j=await r.json();
+  if(!r.ok){alert(j.error||'Could not delete request');return;}
+  toast('Future request deleted');
+  await loadRequests();
+  await loadHolidayCalendar();
+};
 
 /* ========================================================= */
 /* REQUEST LIST */
@@ -2960,24 +3153,6 @@ async function loadRequests(){
 
 
             ${
-              x.calendar_sync_status ===
-              "ERROR"
-
-                ? `
-                  <p
-                    style="color:#b3261e"
-                  >
-                    <b>
-                      Calendar sync failed
-                    </b>
-                  </p>
-                  `
-
-                : ""
-            }
-
-
-            ${
               x.request_type ===
               "DAY OFF"
               &&
@@ -3007,6 +3182,16 @@ async function loadRequests(){
                   </div>
                   `
 
+                : ""
+            }
+
+            ${
+              String(x.start_date) >= new Date().toISOString().slice(0,10)
+                ? `
+                  <div class="row" style="margin-top:10px">
+                    <button class="danger" onclick="deleteFutureRequest(${x.id})">Delete future request</button>
+                  </div>
+                  `
                 : ""
             }
 
@@ -3100,6 +3285,7 @@ window.decide =
 
 
     await loadRequests();
+    await loadHolidayCalendar();
 
   };
 

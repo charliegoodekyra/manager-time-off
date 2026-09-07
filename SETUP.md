@@ -1,152 +1,47 @@
-# Manager Time Off v1 — setup
+# Manager Time Off — Database-only holiday planning
 
-This replaces the Google Form/Requests-sheet front end while KEEPING Google Calendar
-as the scheduling/planning view.
+D1 is the single source of truth. Google Calendar / Apps Script is no longer used.
 
-## Rules preserved exactly
-- Hourly-paid managers only.
-- HOLIDAY must be exactly 7 calendar days inclusive.
-- Only APPROVED HOLIDAY requests count towards capacity.
-- If 2 approved holidays already overlap ANY requested day, the new holiday is BLOCKED.
-- The first fully-booked conflict date is stored.
-- Clear HOLIDAY requests auto-approve.
-- DAY OFF is always PENDING and can only be manually APPROVED or REJECTED.
-- Approved Holiday calendar title: `Holiday - Manager Name`
-- Approved Day Off calendar title: `OFF R - Manager Name`
-- Approved, Pending, Rejected and Blocked manager email notifications are retained.
-- New Day Off requests email the approvers with a direct `/admin?request=<id>` review link.
+## Core rules
+- Holiday requests must be exactly 7 calendar days inclusive.
+- Multiple consecutive weeks must be booked separately.
+- Only APPROVED Holiday requests count toward the maximum of 2 managers off at once.
+- Clear Holiday requests auto-approve.
+- Day Off requests remain PENDING until manually approved/rejected.
+- Closing a month blocks all new manager Holiday and Day Off submissions for that month.
+- Holiday No Go Zones block Holiday requests only; Day Off requests can still be submitted.
+- Admin can add a request on behalf of a manager even when a month is closed, but Holiday No Go Zones still apply.
+- Admin can permanently delete future requests.
+- The admin Holiday Calendar is generated directly from D1 approved holidays + no-go zones.
 
-## ZIPs
-1. `manager-time-off-cloudflare-v1.zip` — website + D1 backend.
-2. `manager-time-off-google-calendar-bridge-v1.zip` — Google Apps Script calendar bridge.
-
-## 1. Create a new D1 database
-Cloudflare → Storage & databases → D1 → Create.
-Name: `manager-time-off-db`
-
-Open it → Console → paste/run `schema.sql`.
-
-Copy the D1 database ID.
-
-## 2. Edit wrangler.jsonc BEFORE uploading to GitHub
-Replace:
-`REPLACE_WITH_YOUR_D1_DATABASE_ID`
-with the actual D1 database ID.
-
-## 3. Create a new GitHub repo
-Suggested name:
-`manager-time-off`
-
-Upload the contents of the Cloudflare ZIP to the repository root.
-
-Connect it to a new Cloudflare Worker exactly like Delivery Checks.
-
-## 4. Cloudflare secrets / variables
-Worker → Settings → Variables and Secrets:
-
-SECRET:
-- `GROUP_ADMIN_PASSWORD` — group admin password.
-- `SESSION_SECRET` — random value at least 32 characters.
-- `RESEND_API_KEY` — your existing Resend API key.
-- `APPS_SCRIPT_BRIDGE_SECRET` — a long random secret shared with Apps Script.
-
-TEXT VARIABLE:
-- `APPROVER_EMAILS`
-  Set to the two addresses that should receive Day Off review alerts, comma-separated.
-
-- `APPS_SCRIPT_BRIDGE_URL`
-  Add this after deploying the Apps Script bridge.
-
-The app sends manager emails from:
-`Manager Time Off <holidays@kyraops.uk>`
-Your verified `kyraops.uk` Resend domain supports this sender.
-
-## 5. Google Apps Script bridge
-Open script.google.com → New project.
-Paste `Code.gs` from the bridge ZIP.
-
-Project Settings → Script Properties:
-- Property: `BRIDGE_SECRET`
-- Value: EXACTLY the same value as Cloudflare `APPS_SCRIPT_BRIDGE_SECRET`.
-
-Deploy → New deployment → Web app:
-- Execute as: Me
-- Who has access: Anyone
-
-Authorise Calendar access.
-Copy the `/exec` Web App URL.
-Put it into Cloudflare as `APPS_SCRIPT_BRIDGE_URL`.
-
-The Google account running the Apps Script must have edit access to every calendar used.
-
-## 6. Calendar naming
-Each store has a `calendar_name`.
-Default: `Manager Holiday Calendar`.
-
-For six stores you can either:
-- share one group calendar; or
-- create one calendar per store and enter its exact Google Calendar name in Manage Stores.
-
-The app sends the selected store's calendar name to Apps Script.
-
-## 7. Custom domain
-Connect the new Worker to:
-`holidays.kyraops.uk`
-
-## 8. Configure stores and managers
-Open:
-`https://holidays.kyraops.uk/admin`
-
-Sign in with the GROUP_ADMIN_PASSWORD.
-Use Manage stores & managers:
-- add the six stores;
-- set each store's exact calendar name;
-- set each store's 5-digit admin/review code;
-- add its hourly-paid managers and email addresses.
-
-Each store gets a permanent manager request link:
-`https://holidays.kyraops.uk/request/<store-slug>`
-
-Copy that link and turn it into a QR code or place it in the manager office.
-
-## 9. Existing Google Sheet migration
-There is no destructive migration. Keep the old Sheet/App Script running until the new
-system passes testing.
-
-For each store, copy manager names + emails from the existing `Managers` sheet into
-Manage Managers. Existing historical requests can remain in Google Sheets as your old archive.
-
-For a future phase we can import historical rows into D1 if you decide that is useful.
-
-## Recommended test
-1. Add Rothwell + its managers.
-2. Submit one 7-day Holiday while no conflicts exist → should APPROVE + appear in Calendar.
-3. Add two overlapping approved test holidays, then submit a third overlapping week → should BLOCK.
-4. Submit Day Off → manager gets PENDING email and approvers get review email.
-5. Approve it in `/admin` → Calendar gets `OFF R - Manager Name` + manager gets APPROVED email.
-6. Submit another Day Off and reject it → manager gets rejection email.
-
-## Request month controls
-
-The admin page now supports closing/reopening requests by store and month and adding a request on behalf of a manager.
-
-The required D1 table is included in `schema.sql` and in `migrations/0002_request_month_blocks.sql`.
-If upgrading an existing database that does not already have this table, run:
+## Existing database upgrade
+If `request_month_blocks` already exists, leave it in place. Run the new migration:
 
 ```bash
-npx wrangler d1 execute manager-time-off-db --remote --file=migrations/0002_request_month_blocks.sql
+npx wrangler d1 execute manager-time-off-db --remote --file=migrations/0003_holiday_no_go_zones.sql
 ```
 
-If you already created `request_month_blocks` manually, the migration is safe to run because the table/index use `IF NOT EXISTS`.
+Or paste `migrations/0003_holiday_no_go_zones.sql` into the D1 Console and Execute.
 
-## Upcoming approved holidays
+## Cloudflare variables
+Still required:
+- `GROUP_ADMIN_PASSWORD`
+- `SESSION_SECRET`
+- `RESEND_API_KEY`
+- `APPROVER_EMAILS`
 
-The public request form now shows the selected manager's future **approved Holiday** weeks only. Past holiday weeks are not shown.
+No longer required and may be deleted from the Worker settings:
+- `APPS_SCRIPT_BRIDGE_URL`
+- `APPS_SCRIPT_BRIDGE_SECRET`
 
-Managers cannot remove or cancel holiday weeks themselves from the website. If a booking needs to be changed, it should be handled by an administrator. Managers can use the shared **Manager Holiday Calendar** to check availability before submitting another week.
+## Google Apps Script
+Not used by this version. You may leave the old deployment in place temporarily or disable/delete it later.
 
-The manager form also displays:
-
-`Multiple consecutive weeks must be booked separately.`
-
-The Google Apps Script bridge only needs the `create_event` action for new approved holidays/day-off requests.
+## Recommended test
+1. Open `/admin` and choose a store/month in Holiday calendar.
+2. Add a No Go Zone and confirm it appears red on the calendar.
+3. Try a Holiday request touching that zone — it should be blocked.
+4. Try a Day Off request on the same dates — it should submit as PENDING.
+5. Submit a clear 7-day Holiday — it should auto-approve and appear on the admin calendar.
+6. Delete that future request from the Requests list — it should disappear from the calendar.
+7. Close a month and verify normal manager submissions are blocked with the CLOSED message.
