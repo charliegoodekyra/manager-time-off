@@ -217,6 +217,33 @@ button{
   flex-wrap:wrap
 }
 
+.monthControlStatus{
+  padding:10px 12px;
+  border-radius:10px;
+  font-weight:800;
+  margin-top:10px
+}
+
+.monthControlStatus.open{
+  background:#e8f5e9;
+  color:var(--green)
+}
+
+.monthControlStatus.closed{
+  background:#fff4f3;
+  color:var(--red)
+}
+
+.closedNotice{
+  margin-top:12px;
+  padding:12px;
+  border-radius:10px;
+  background:#fff4f3;
+  color:var(--red);
+  font-weight:700;
+  line-height:1.45
+}
+
 #toast{
   position:fixed;
   bottom:20px;
@@ -365,6 +392,7 @@ button{
         <input
           id="endDate"
           type="date"
+          onchange="checkRequestAvailability()"
         >
 
       </div>
@@ -391,7 +419,13 @@ button{
     ></textarea>
 
 
+    <div
+      id="closedMonthNotice"
+      class="closedNotice hidden"
+    ></div>
+
     <button
+      id="submitRequestButton"
       class="primary"
       style="width:100%;margin-top:12px"
       onclick="submitRequest()"
@@ -498,6 +532,77 @@ button{
       Sign out
     </button>
 
+  </div>
+
+
+  <!-- REQUEST CONTROLS -->
+
+  <div class="card">
+
+    <div class="row between">
+      <div>
+        <h2 style="margin:0">Request controls</h2>
+        <div class="muted">Close or reopen requests by store and month.</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>Store</label>
+        <select id="controlStore" onchange="requestControlStoreChanged()"></select>
+      </div>
+      <div>
+        <label>Month</label>
+        <input id="controlMonth" type="month" onchange="loadRequestControlStatus()">
+      </div>
+    </div>
+
+    <div id="requestControlStatus" class="monthControlStatus open">OPEN — managers can submit requests for this month.</div>
+
+    <div class="row" style="margin-top:12px;flex-wrap:wrap">
+      <button id="closeRequestsButton" class="danger" onclick="closeRequestsForMonth()">Close Requests</button>
+      <button id="reopenRequestsButton" class="primary hidden" onclick="reopenRequestsForMonth()">Reopen Requests</button>
+      <button class="secondary" onclick="openOnBehalf()">+ Add Request on Behalf of Manager</button>
+    </div>
+
+  </div>
+
+  <div id="onBehalfPanel" class="card hidden">
+    <div class="row between">
+      <div>
+        <h2 style="margin:0">Add Request on Behalf of Manager</h2>
+        <div class="muted">Admin entries are allowed even when the selected month is closed.</div>
+      </div>
+      <button class="secondary" onclick="closeOnBehalf()">Close</button>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>Manager</label>
+        <select id="onBehalfManager"></select>
+      </div>
+      <div>
+        <label>Request type</label>
+        <select id="onBehalfType" onchange="onBehalfTypeChanged()">
+          <option value="HOLIDAY">Holiday</option>
+          <option value="DAY OFF">Day Off</option>
+        </select>
+      </div>
+      <div>
+        <label>Start date</label>
+        <input id="onBehalfStart" type="date" onchange="onBehalfStartChanged()">
+      </div>
+      <div>
+        <label>End date</label>
+        <input id="onBehalfEnd" type="date">
+      </div>
+    </div>
+
+    <label>Notes</label>
+    <textarea id="onBehalfNotes" rows="3" placeholder="Optional"></textarea>
+
+    <button class="primary" style="margin-top:12px" onclick="submitOnBehalf()">Add Request</button>
+    <p id="onBehalfMessage"></p>
   </div>
 
 
@@ -1107,6 +1212,10 @@ window.typeChanged =
 
       startChanged();
 
+    }else{
+
+      checkRequestAvailability();
+
     }
 
   };
@@ -1128,6 +1237,35 @@ window.startChanged =
           6
         );
 
+    }
+
+    checkRequestAvailability();
+
+  };
+
+
+window.checkRequestAvailability =
+  async () => {
+
+    const notice=$("closedMonthNotice");
+    const button=$("submitRequestButton");
+    notice.classList.add("hidden");
+    notice.textContent="";
+    button.disabled=false;
+
+    if(!currentStore||!$("startDate").value||!$("endDate").value)return;
+
+    const q=new URLSearchParams({
+      store_id:String(currentStore.id),
+      start_date:$("startDate").value,
+      end_date:$("endDate").value
+    });
+    const r=await fetch("/api/public/request-blocks?"+q.toString());
+    const j=await r.json();
+    if(r.ok&&j.closed){
+      notice.textContent=j.block.message;
+      notice.classList.remove("hidden");
+      button.disabled=true;
     }
 
   };
@@ -1383,6 +1521,9 @@ async function loadAdmin(){
 
   await loadStores();
 
+  setupRequestControls();
+  await loadRequestControlStatus();
+
   await loadRequests();
 
 }
@@ -1535,6 +1676,26 @@ async function loadStores(){
 
     }
 
+  }
+
+
+  $("controlStore").innerHTML =
+    activeStores.map(
+      s =>
+        `
+        <option value="${s.id}">
+          ${esc(s.name)}
+        </option>
+        `
+    ).join("");
+
+
+  if(
+    currentSession.role !==
+    "group_admin"
+    && activeStores[0]
+  ){
+    $("controlStore").value=activeStores[0].id;
   }
 
 
@@ -2424,6 +2585,119 @@ window.toggleManagerActive =
     await loadManagers();
 
   };
+
+
+/* ========================================================= */
+/* REQUEST MONTH CONTROLS */
+/* ========================================================= */
+
+function setupRequestControls(){
+  if(!$('controlMonth').value){
+    const d=new Date();
+    $('controlMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  }
+}
+
+function selectedControlMonth(){
+  const m=String($('controlMonth').value||'').match(/^(\d{4})-(\d{2})$/);
+  return m?{year:Number(m[1]),month:Number(m[2])}:null;
+}
+
+window.requestControlStoreChanged=async()=>{
+  await loadRequestControlStatus();
+  if(!$('onBehalfPanel').classList.contains('hidden'))await loadOnBehalfManagers();
+};
+
+async function loadRequestControlStatus(){
+  const storeId=Number($('controlStore').value||0);
+  const selected=selectedControlMonth();
+  if(!storeId||!selected)return;
+  const q=new URLSearchParams({store_id:String(storeId),year:String(selected.year),month:String(selected.month)});
+  const r=await fetch('/api/admin/request-blocks?'+q.toString());
+  const j=await r.json();
+  if(!r.ok){toast(j.error||'Could not load request status');return;}
+  $('requestControlStatus').className='monthControlStatus '+(j.closed?'closed':'open');
+  $('requestControlStatus').textContent=j.closed
+    ? j.message
+    : 'OPEN — managers can submit requests for this month.';
+  $('closeRequestsButton').classList.toggle('hidden',j.closed);
+  $('reopenRequestsButton').classList.toggle('hidden',!j.closed);
+}
+
+window.closeRequestsForMonth=async()=>{
+  const storeId=Number($('controlStore').value||0);
+  const selected=selectedControlMonth();
+  if(!storeId||!selected)return;
+  const store=stores.find(x=>Number(x.id)===storeId);
+  const monthLabel=new Date(selected.year,selected.month-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  if(!confirm(`Close new requests for ${store?store.name:'this store'} — ${monthLabel}?`))return;
+  const r=await fetch('/api/admin/request-blocks',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({store_id:storeId,year:selected.year,month:selected.month})});
+  const j=await r.json();
+  if(!r.ok){alert(j.error||'Could not close requests');return;}
+  toast('Requests closed');
+  await loadRequestControlStatus();
+};
+
+window.reopenRequestsForMonth=async()=>{
+  const storeId=Number($('controlStore').value||0);
+  const selected=selectedControlMonth();
+  if(!storeId||!selected)return;
+  const store=stores.find(x=>Number(x.id)===storeId);
+  const monthLabel=new Date(selected.year,selected.month-1,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  if(!confirm(`Reopen requests for ${store?store.name:'this store'} — ${monthLabel}?`))return;
+  const r=await fetch('/api/admin/request-blocks',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({store_id:storeId,year:selected.year,month:selected.month})});
+  const j=await r.json();
+  if(!r.ok){alert(j.error||'Could not reopen requests');return;}
+  toast('Requests reopened');
+  await loadRequestControlStatus();
+};
+
+window.openOnBehalf=async()=>{
+  $('onBehalfPanel').classList.remove('hidden');
+  $('onBehalfMessage').textContent='';
+  await loadOnBehalfManagers();
+  $('onBehalfPanel').scrollIntoView({behavior:'smooth',block:'start'});
+};
+
+window.closeOnBehalf=()=>{$('onBehalfPanel').classList.add('hidden');};
+
+async function loadOnBehalfManagers(){
+  const storeId=Number($('controlStore').value||0);
+  if(!storeId){$('onBehalfManager').innerHTML='';return;}
+  const r=await fetch('/api/admin/managers?store_id='+storeId);
+  const j=await r.json();
+  if(!r.ok){toast(j.error||'Could not load managers');return;}
+  $('onBehalfManager').innerHTML=(j.managers||[]).filter(m=>Number(m.active)===1).map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('');
+}
+
+window.onBehalfTypeChanged=()=>{
+  if($('onBehalfType').value==='HOLIDAY')onBehalfStartChanged();
+};
+
+window.onBehalfStartChanged=()=>{
+  if($('onBehalfType').value==='HOLIDAY'&&$('onBehalfStart').value){
+    $('onBehalfEnd').value=addDaysISO($('onBehalfStart').value,6);
+  }
+};
+
+window.submitOnBehalf=async()=>{
+  const body={
+    store_id:Number($('controlStore').value||0),
+    manager_id:Number($('onBehalfManager').value||0),
+    request_type:$('onBehalfType').value,
+    start_date:$('onBehalfStart').value,
+    end_date:$('onBehalfEnd').value,
+    notes:$('onBehalfNotes').value
+  };
+  $('onBehalfMessage').textContent='Adding request…';
+  const r=await fetch('/api/admin/requests/on-behalf',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!r.ok){$('onBehalfMessage').textContent=j.error||'Could not add request';return;}
+  $('onBehalfMessage').textContent=`Request added — ${j.request.status}.`;
+  $('onBehalfNotes').value='';
+  toast('Request added on behalf of manager');
+  await loadRequests();
+};
 
 
 /* ========================================================= */

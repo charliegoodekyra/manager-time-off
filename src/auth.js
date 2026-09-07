@@ -44,6 +44,7 @@ export async function guard(req,env){
 
   // Public hourly-paid-manager request endpoints.
   if(/^\/api\/public\/store\/[a-z0-9-]+$/.test(p)&&req.method==='GET')return {};
+  if(p==='/api/public/request-blocks'&&req.method==='GET')return {};
   if(p==='/api/public/requests'&&req.method==='POST'){
     if(req.headers.get('origin')!==url.origin)return {response:reply({error:'Same-origin request required'},403)};
     return {};
@@ -139,6 +140,21 @@ export async function guard(req,env){
     if(requested&&Number(requested)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
     url.searchParams.set('store_id',String(auth.store_id));req=new Request(url,req);
   }
+  if(p==='/api/admin/request-blocks'&&auth.role==='store'){
+    let requested=url.searchParams.get('store_id');
+    if(!requested&& !['GET','HEAD'].includes(req.method)){
+      let body={};try{body=await req.clone().json();}catch{}
+      requested=body.store_id;
+    }
+    if(requested&&Number(requested)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
+    if(['GET','HEAD'].includes(req.method)){
+      url.searchParams.set('store_id',String(auth.store_id));req=new Request(url,req);
+    }
+  }
+  if(p==='/api/admin/requests/on-behalf'&&auth.role==='store'){
+    let body={};try{body=await req.clone().json();}catch{}
+    if(Number(body.store_id)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
+  }
 
   const decision=p.match(/^\/api\/admin\/requests\/(\d+)\/decision$/);
   if(decision){
@@ -153,6 +169,8 @@ export async function guard(req,env){
     p==='/api/admin/managers' ||
     /^\/api\/admin\/managers\/\d+$/.test(p) ||
     p==='/api/admin/requests' ||
+    p==='/api/admin/request-blocks' ||
+    p==='/api/admin/requests/on-behalf' ||
     decision;
   if(!allowed)return {response:reply({error:'Not found'},404)};
   return {auth,request:req};

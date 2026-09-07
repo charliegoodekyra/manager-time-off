@@ -899,6 +899,115 @@ async function firstHolidayConflict(
 }
 
 
+
+function monthName(month){
+  return new Date(Date.UTC(2026, Number(month)-1, 1)).toLocaleDateString(
+    'en-GB',
+    {month:'long',timeZone:'UTC'}
+  );
+}
+
+function closedMonthMessage(year,month){
+  return `Requests for ${monthName(month)} are now CLOSED, as the schedule is being completed. No further requests can be submitted for this month.`;
+}
+
+function monthsCovered(startDate,endDate){
+  const start=parseISODate(startDate);
+  const end=parseISODate(endDate);
+  if(!start||!end||end<start)return [];
+  const out=[];
+  let y=start.getUTCFullYear();
+  let m=start.getUTCMonth()+1;
+  const ey=end.getUTCFullYear();
+  const em=end.getUTCMonth()+1;
+  while(y<ey||(y===ey&&m<=em)){
+    out.push({year:y,month:m});
+    m++;
+    if(m===13){m=1;y++;}
+  }
+  return out;
+}
+
+async function firstClosedMonth(env,storeId,startDate,endDate){
+  const months=monthsCovered(startDate,endDate);
+  for(const item of months){
+    const row=await env.DB.prepare(`
+      SELECT id,store_id,year,month,message,blocked_at
+      FROM request_month_blocks
+      WHERE store_id=? AND year=? AND month=?
+      LIMIT 1
+    `).bind(storeId,item.year,item.month).first();
+    if(row){
+      return {
+        ...row,
+        message: row.message || closedMonthMessage(row.year,row.month)
+      };
+    }
+  }
+  return null;
+}
+
+async function createTimeOffRequest(env,{store,manager,type,startDate,endDate,notes,origin}){
+  const start=parseISODate(startDate);
+  const end=parseISODate(endDate);
+  let status='PENDING';
+  let conflict=null;
+
+  if(type==='HOLIDAY'){
+    if(daysInclusive(start,end)!==7){
+      status='REJECTED';
+    }else{
+      conflict=await firstHolidayConflict(env,store.id,startDate,endDate);
+      status=conflict?'BLOCKED':'APPROVED';
+    }
+  }
+
+  const submitted=now();
+  const ins=await env.DB.prepare(`
+    INSERT INTO requests
+    (
+      store_id,manager_id,manager_name,manager_email,request_type,
+      start_date,end_date,status,conflict_date,notes,
+      calendar_sync_status,submitted_at
+    )
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    store.id,
+    manager.id,
+    manager.name,
+    manager.email,
+    type,
+    startDate,
+    endDate,
+    status,
+    conflict,
+    notes,
+    status==='APPROVED'?'PENDING_SYNC':'NOT_REQUIRED',
+    submitted
+  ).run();
+
+  const req={
+    id:ins.meta.last_row_id,
+    store_id:store.id,
+    store_name:store.name,
+    manager_name:manager.name,
+    manager_email:manager.email,
+    request_type:type,
+    start_date:startDate,
+    end_date:endDate,
+    status,
+    conflict_date:conflict,
+    notes
+  };
+
+  let calendar=null;
+  if(status==='APPROVED')calendar=await createCalendar(env,store,req);
+  await notifyManager(env,req);
+  if(status==='PENDING')await notifyApprovers(env,req,origin);
+
+  return {request:req,calendar};
+}
+
 // ============================================================
 // WORKER
 // ============================================================
@@ -1095,6 +1204,26 @@ export default {
 
 
       // ======================================================
+      // PUBLIC — CHECK CLOSED MONTHS
+      // ======================================================
+
+      if (
+        p === '/api/public/request-blocks' &&
+        request.method === 'GET'
+      ) {
+        const storeId=Number(url.searchParams.get('store_id')||0);
+        const startDate=String(url.searchParams.get('start_date')||'');
+        const endDate=String(url.searchParams.get('end_date')||startDate);
+        const start=parseISODate(startDate);
+        const end=parseISODate(endDate);
+        if(!storeId||!start||!end||end<start){
+          return json({error:'Store and valid dates are required'},400);
+        }
+        const block=await firstClosedMonth(env,storeId,startDate,endDate);
+        return json({closed:!!block,block});
+      }
+
+      // ======================================================
       // SUBMIT REQUEST
       // ======================================================
 
@@ -1215,6 +1344,34 @@ export default {
                 'Check the requested dates'
             },
             400
+          );
+
+        }
+
+
+        const closedMonth =
+          await firstClosedMonth(
+            env,
+            store.id,
+            body.start_date,
+            body.end_date
+          );
+
+
+        if (
+          closedMonth
+        ) {
+
+          return json(
+            {
+              error:
+                closedMonth.message,
+              code:
+                'REQUEST_MONTH_CLOSED',
+              block:
+                closedMonth
+            },
+            409
           );
 
         }
@@ -1836,6 +1993,112 @@ export default {
 
       }
 
+
+      // ======================================================
+      // REQUEST MONTH CONTROLS — ADMIN
+      // ======================================================
+
+      if (
+        p === '/api/admin/request-blocks' &&
+        request.method === 'GET'
+      ) {
+        const storeId=Number(url.searchParams.get('store_id')||0);
+        const year=Number(url.searchParams.get('year')||0);
+        const month=Number(url.searchParams.get('month')||0);
+        if(!storeId||!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){
+          return json({error:'Store, year and month are required'},400);
+        }
+        const block=await env.DB.prepare(`
+          SELECT id,store_id,year,month,message,blocked_at
+          FROM request_month_blocks
+          WHERE store_id=? AND year=? AND month=?
+          LIMIT 1
+        `).bind(storeId,year,month).first();
+        return json({
+          closed:!!block,
+          block:block?{...block,message:block.message||closedMonthMessage(year,month)}:null,
+          message:block?(block.message||closedMonthMessage(year,month)):null
+        });
+      }
+
+      if (
+        p === '/api/admin/request-blocks' &&
+        request.method === 'PUT'
+      ) {
+        const b=await request.json();
+        const storeId=Number(b.store_id||0);
+        const year=Number(b.year||0);
+        const month=Number(b.month||0);
+        if(!storeId||!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){
+          return json({error:'Store, year and month are required'},400);
+        }
+        const store=await env.DB.prepare('SELECT id FROM stores WHERE id=? AND active=1').bind(storeId).first();
+        if(!store)return json({error:'Store not found'},404);
+        const message=closedMonthMessage(year,month);
+        await env.DB.prepare(`
+          INSERT INTO request_month_blocks(store_id,year,month,message,blocked_at)
+          VALUES(?,?,?,?,?)
+          ON CONFLICT(store_id,year,month)
+          DO UPDATE SET message=excluded.message,blocked_at=excluded.blocked_at
+        `).bind(storeId,year,month,message,now()).run();
+        return json({ok:true,closed:true,message});
+      }
+
+      if (
+        p === '/api/admin/request-blocks' &&
+        request.method === 'DELETE'
+      ) {
+        const b=await request.json();
+        const storeId=Number(b.store_id||0);
+        const year=Number(b.year||0);
+        const month=Number(b.month||0);
+        if(!storeId||!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){
+          return json({error:'Store, year and month are required'},400);
+        }
+        await env.DB.prepare(`
+          DELETE FROM request_month_blocks
+          WHERE store_id=? AND year=? AND month=?
+        `).bind(storeId,year,month).run();
+        return json({ok:true,closed:false});
+      }
+
+      // ======================================================
+      // ADD REQUEST ON BEHALF OF MANAGER — ADMIN
+      // ======================================================
+
+      if (
+        p === '/api/admin/requests/on-behalf' &&
+        request.method === 'POST'
+      ) {
+        const body=await request.json();
+        const store=await env.DB.prepare(`
+          SELECT * FROM stores WHERE id=? AND active=1
+        `).bind(Number(body.store_id)).first();
+        const manager=await env.DB.prepare(`
+          SELECT * FROM managers
+          WHERE id=? AND store_id=? AND active=1
+        `).bind(Number(body.manager_id),Number(body.store_id)).first();
+        if(!store||!manager)return json({error:'Store or manager is not valid'},400);
+
+        const type=String(body.request_type||'').toUpperCase();
+        if(!['HOLIDAY','DAY OFF'].includes(type))return json({error:'Choose Holiday or Day Off'},400);
+        const start=parseISODate(body.start_date);
+        const end=parseISODate(body.end_date);
+        if(!start||!end||end<start)return json({error:'Check the requested dates'},400);
+        const notes=String(body.notes||'').trim().slice(0,2000);
+
+        // Deliberately bypasses month closure: authorised admin exception.
+        const result=await createTimeOffRequest(env,{
+          store,
+          manager,
+          type,
+          startDate:body.start_date,
+          endDate:body.end_date,
+          notes,
+          origin:url.origin
+        });
+        return json({ok:true,...result,added_on_behalf:true});
+      }
 
       // ======================================================
       // REQUESTS — ADMIN LIST

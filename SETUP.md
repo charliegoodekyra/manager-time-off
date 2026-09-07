@@ -125,3 +125,16 @@ For a future phase we can import historical rows into D1 if you decide that is u
 4. Submit Day Off → manager gets PENDING email and approvers get review email.
 5. Approve it in `/admin` → Calendar gets `OFF R - Manager Name` + manager gets APPROVED email.
 6. Submit another Day Off and reject it → manager gets rejection email.
+
+## Request month controls
+
+The admin page now supports closing/reopening requests by store and month and adding a request on behalf of a manager.
+
+The required D1 table is included in `schema.sql` and in `migrations/0002_request_month_blocks.sql`.
+If upgrading an existing database that does not already have this table, run:
+
+```bash
+npx wrangler d1 execute manager-time-off-db --remote --file=migrations/0002_request_month_blocks.sql
+```
+
+If you already created `request_month_blocks` manually, the migration is safe to run because the table/index use `IF NOT EXISTS`.
