@@ -48,22 +48,6 @@ function doPost(e) {
       return output({ ok: true, event_id: event.getId() });
     }
 
-    if (body.action === 'delete_event') {
-      var eventId = String(body.event_id || '').trim();
-      if (!eventId) {
-        return output({ ok: true, skipped: true });
-      }
-
-      var event = calendar.getEventById(eventId);
-      if (!event) {
-        // Treat already-missing events as successfully removed so D1 can be cleaned up.
-        return output({ ok: true, already_missing: true });
-      }
-
-      event.deleteEvent();
-      return output({ ok: true, deleted: true });
-    }
-
     return output({ ok: false, error: 'Unknown action' });
   } catch (err) {
     return output({ ok: false, error: String(err && err.message ? err.message : err) });

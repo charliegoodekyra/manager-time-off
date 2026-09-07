@@ -433,8 +433,8 @@ button{
 
 
     <div id="upcomingBookings" class="bookingPanel hidden">
-      <div class="bookingPanelTitle">Upcoming holiday bookings</div>
-      <div class="muted" style="margin-bottom:8px">Only future approved holiday weeks are shown.</div>
+      <div class="bookingPanelTitle">Your upcoming approved holidays</div>
+      <div class="muted" style="margin-bottom:8px">Only future approved holiday weeks are shown. Check the Manager Holiday Calendar before booking another week.</div>
       <div id="upcomingBookingsList"></div>
     </div>
 
@@ -1260,40 +1260,15 @@ async function loadUpcomingBookings(){
   }
 
   list.innerHTML=rows.map(row=>{
-    const button=row.removable
-      ? `<button class="danger bookingRemove" onclick="removeBooking(${Number(row.id)})">Remove week</button>`
-      : `<button class="secondary bookingRemove" disabled>Removal unavailable</button>`;
-    const reason=row.removable?'Requests are still open for this week.':esc(row.removal_message||'Requests are closed for this month.');
     return `
       <div class="bookingItem">
         <div>
           <div class="bookingDates">${formatBookingDate(row.start_date)} — ${formatBookingDate(row.end_date)}</div>
-          <div class="bookingReason">${reason}</div>
+          <div class="bookingReason">Approved holiday</div>
         </div>
-        ${button}
       </div>`;
   }).join('');
 }
-
-window.removeBooking=async(id)=>{
-  const managerId=Number($("managerSelect").value||0);
-  if(!currentStore||!managerId)return;
-  if(!confirm('Remove this holiday week? It will also be removed from the Manager Holiday Calendar.'))return;
-
-  const r=await fetch(`/api/public/requests/${id}`,{
-    method:'DELETE',
-    headers:{'content-type':'application/json'},
-    body:JSON.stringify({store_id:currentStore.id,manager_id:managerId})
-  });
-  const j=await r.json();
-  if(!r.ok){
-    alert(j.error||'Could not remove booking');
-    await loadUpcomingBookings();
-    return;
-  }
-  alert('Holiday week removed.');
-  await loadUpcomingBookings();
-};
 
 
 window.typeChanged =

@@ -812,23 +812,6 @@ async function createCalendar(
 
 
 // ============================================================
-// DELETE CALENDAR EVENT
-// ============================================================
-
-async function deleteCalendar(env,store,req){
-  if(!req.calendar_event_id){
-    return {ok:true,skipped:true};
-  }
-
-  return calendarBridge(env,{
-    action:'delete_event',
-    calendar_name:store.calendar_name||'Manager Holiday Calendar',
-    event_id:req.calendar_event_id
-  });
-}
-
-
-// ============================================================
 // HOLIDAY CONFLICT CHECK
 // ============================================================
 
@@ -1247,64 +1230,7 @@ export default {
           LIMIT 50
         `).bind(storeId,managerId,today).all();
 
-        const bookings=[];
-        for(const row of results){
-          const block=await firstClosedMonth(env,storeId,row.start_date,row.end_date);
-          bookings.push({
-            ...row,
-            removable:!block,
-            removal_message:block
-              ? `This holiday cannot be removed because ${monthName(block.month)} requests are CLOSED.`
-              : null
-          });
-        }
-        return json({bookings});
-      }
-
-      // ======================================================
-      // PUBLIC — REMOVE UPCOMING HOLIDAY BOOKING
-      // ======================================================
-
-      const publicDelete=p.match(/^\/api\/public\/requests\/(\d+)$/);
-      if(publicDelete&&request.method==='DELETE'){
-        const body=await request.json();
-        const requestId=Number(publicDelete[1]);
-        const storeId=Number(body.store_id||0);
-        const managerId=Number(body.manager_id||0);
-        const row=await env.DB.prepare(`
-          SELECT r.*,s.calendar_name
-          FROM requests r
-          JOIN stores s ON s.id=r.store_id
-          WHERE r.id=?
-            AND r.store_id=?
-            AND r.manager_id=?
-            AND r.request_type='HOLIDAY'
-            AND r.status='APPROVED'
-          LIMIT 1
-        `).bind(requestId,storeId,managerId).first();
-        if(!row)return json({error:'Holiday booking not found'},404);
-
-        const today=new Date().toISOString().slice(0,10);
-        if(row.start_date<today){
-          return json({error:'Only holiday weeks that have not started yet can be removed.'},409);
-        }
-
-        const block=await firstClosedMonth(env,storeId,row.start_date,row.end_date);
-        if(block){
-          return json({
-            error:`This holiday cannot be removed because requests for ${monthName(block.month)} are now CLOSED.`
-          },409);
-        }
-
-        const calendar=await deleteCalendar(env,{calendar_name:row.calendar_name},row);
-        if(!calendar?.ok){
-          return json({
-            error:'The holiday could not be removed from the Manager Holiday Calendar, so the booking has been left in place.'
-          },502);
-        }
-
-        await env.DB.prepare('DELETE FROM requests WHERE id=?').bind(row.id).run();
-        return json({ok:true,removed:true});
+        return json({bookings:results||[]});
       }
 
       // ======================================================

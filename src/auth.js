@@ -50,11 +50,6 @@ export async function guard(req,env){
     if(req.headers.get('origin')!==url.origin)return {response:reply({error:'Same-origin request required'},403)};
     return {};
   }
-  if(/^\/api\/public\/requests\/\d+$/.test(p)&&req.method==='DELETE'){
-    if(req.headers.get('origin')!==url.origin)return {response:reply({error:'Same-origin request required'},403)};
-    return {};
-  }
-
   if(!env.GROUP_ADMIN_PASSWORD||!env.SESSION_SECRET||env.SESSION_SECRET.length<32){
     return {response:reply({error:'Authentication secrets are not configured'},503)};
   }
