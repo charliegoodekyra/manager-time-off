@@ -138,3 +138,22 @@ npx wrangler d1 execute manager-time-off-db --remote --file=migrations/0002_requ
 ```
 
 If you already created `request_month_blocks` manually, the migration is safe to run because the table/index use `IF NOT EXISTS`.
+
+## Upcoming bookings and manager cancellations
+
+The public manager form now shows a selected manager's future **approved Holiday** weeks only. Past holiday weeks are not shown.
+
+A future Holiday can be removed by the manager only while **every month covered by that 7-day booking is still open for requests**. If any covered month is closed, the Remove button is disabled and the API also refuses the deletion.
+
+Removing a Holiday deletes the request from D1 and removes its event from Google Calendar. To support this, update the Apps Script bridge to the version in:
+
+`google-calendar-bridge/Code.gs`
+
+After pasting that file into the existing Apps Script project, create a new deployment (or update the existing deployment) and keep the same `BRIDGE_SECRET`. If the deployment URL changes, update `APPS_SCRIPT_BRIDGE_URL` in Cloudflare.
+
+The manager form also now displays:
+
+`Multiple consecutive weeks must be booked separately.`
+
+### Important access note
+The public request form identifies a manager by the manager dropdown, just as submission already does. Therefore anyone who can access a store's request link can select another manager's name and see/remove that manager's future Holiday weeks while the month is open. If you want stronger protection later, add a per-manager PIN or email verification before enabling cancellation.

@@ -45,7 +45,12 @@ export async function guard(req,env){
   // Public hourly-paid-manager request endpoints.
   if(/^\/api\/public\/store\/[a-z0-9-]+$/.test(p)&&req.method==='GET')return {};
   if(p==='/api/public/request-blocks'&&req.method==='GET')return {};
+  if(/^\/api\/public\/managers\/\d+\/bookings$/.test(p)&&req.method==='GET')return {};
   if(p==='/api/public/requests'&&req.method==='POST'){
+    if(req.headers.get('origin')!==url.origin)return {response:reply({error:'Same-origin request required'},403)};
+    return {};
+  }
+  if(/^\/api\/public\/requests\/\d+$/.test(p)&&req.method==='DELETE'){
     if(req.headers.get('origin')!==url.origin)return {response:reply({error:'Same-origin request required'},403)};
     return {};
   }

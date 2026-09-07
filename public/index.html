@@ -266,6 +266,29 @@ button{
 
 }
 
+
+
+.bookingPanel{
+  margin-top:14px;
+  padding:14px;
+  border:1px solid #d8dde6;
+  border-radius:12px;
+  background:#f8fafc;
+}
+.bookingPanelTitle{font-weight:800;margin-bottom:4px}
+.bookingItem{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  padding:12px 0;
+  border-top:1px solid #e5e7eb;
+}
+.bookingItem:first-child{border-top:0}
+.bookingDates{font-weight:750}
+.bookingReason{font-size:12px;color:#64748b;margin-top:3px}
+.bookingRemove{white-space:nowrap}
+@media(max-width:650px){.bookingItem{align-items:flex-start;flex-direction:column}.bookingRemove{width:100%}}
 </style>
 
 </head>
@@ -342,7 +365,7 @@ button{
       Manager
     </label>
 
-    <select id="managerSelect">
+    <select id="managerSelect" onchange="managerChanged()">
     </select>
 
 
@@ -404,8 +427,16 @@ button{
       id="holidayHint"
       class="muted"
     >
-      Holiday requests must be exactly 7 calendar days. The end date is set automatically.
+      Holiday requests must be exactly 7 calendar days. The end date is set automatically.<br>
+      <b>Multiple consecutive weeks must be booked separately.</b>
     </p>
+
+
+    <div id="upcomingBookings" class="bookingPanel hidden">
+      <div class="bookingPanelTitle">Upcoming holiday bookings</div>
+      <div class="muted" style="margin-bottom:8px">Only future approved holiday weeks are shown.</div>
+      <div id="upcomingBookingsList"></div>
+    </div>
 
 
     <label>
@@ -1193,6 +1224,78 @@ async function loadPublicStore(slug){
 }
 
 
+function formatBookingDate(s){
+  if(!s)return '';
+  const d=new Date(s+'T00:00:00Z');
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'});
+}
+
+window.managerChanged=async()=>{
+  await loadUpcomingBookings();
+};
+
+async function loadUpcomingBookings(){
+  const panel=$("upcomingBookings");
+  const list=$("upcomingBookingsList");
+  const managerId=Number($("managerSelect").value||0);
+  panel.classList.add("hidden");
+  list.innerHTML="";
+  if(!currentStore||!managerId)return;
+
+  list.innerHTML='<div class="muted">Loading bookings…</div>';
+  panel.classList.remove("hidden");
+
+  const q=new URLSearchParams({store_id:String(currentStore.id)});
+  const r=await fetch(`/api/public/managers/${managerId}/bookings?`+q.toString());
+  const j=await r.json();
+  if(!r.ok){
+    list.innerHTML=`<div class="muted">${esc(j.error||'Could not load bookings')}</div>`;
+    return;
+  }
+
+  const rows=j.bookings||[];
+  if(!rows.length){
+    list.innerHTML='<div class="muted">No upcoming holiday bookings.</div>';
+    return;
+  }
+
+  list.innerHTML=rows.map(row=>{
+    const button=row.removable
+      ? `<button class="danger bookingRemove" onclick="removeBooking(${Number(row.id)})">Remove week</button>`
+      : `<button class="secondary bookingRemove" disabled>Removal unavailable</button>`;
+    const reason=row.removable?'Requests are still open for this week.':esc(row.removal_message||'Requests are closed for this month.');
+    return `
+      <div class="bookingItem">
+        <div>
+          <div class="bookingDates">${formatBookingDate(row.start_date)} — ${formatBookingDate(row.end_date)}</div>
+          <div class="bookingReason">${reason}</div>
+        </div>
+        ${button}
+      </div>`;
+  }).join('');
+}
+
+window.removeBooking=async(id)=>{
+  const managerId=Number($("managerSelect").value||0);
+  if(!currentStore||!managerId)return;
+  if(!confirm('Remove this holiday week? It will also be removed from the Manager Holiday Calendar.'))return;
+
+  const r=await fetch(`/api/public/requests/${id}`,{
+    method:'DELETE',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({store_id:currentStore.id,manager_id:managerId})
+  });
+  const j=await r.json();
+  if(!r.ok){
+    alert(j.error||'Could not remove booking');
+    await loadUpcomingBookings();
+    return;
+  }
+  alert('Holiday week removed.');
+  await loadUpcomingBookings();
+};
+
+
 window.typeChanged =
   () => {
 
@@ -1402,6 +1505,8 @@ window.submitRequest =
       .remove(
         "hidden"
       );
+
+    await loadUpcomingBookings();
 
   };
 
