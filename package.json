@@ -1,0 +1,8 @@
+{
+  "name": "manager-time-off",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {"wrangler":"^4.0.0"},
+  "scripts":{"dev":"wrangler dev","deploy":"wrangler deploy","test":"node tests/smoke.test.mjs"}
+}
