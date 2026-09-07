@@ -566,15 +566,16 @@ async function notifyApprovers(
   try {
     const { results } = await env.DB.prepare(`
       SELECT email
-      FROM approver_emails
+      FROM store_approver_emails
+      WHERE store_id=?
       ORDER BY email COLLATE NOCASE
-    `).all();
+    `).bind(Number(req.store_id)).all();
 
     to = (results || [])
       .map(row => String(row.email || '').trim())
       .filter(Boolean);
   } catch (e) {
-    console.warn('Could not read approver_emails table; using legacy APPROVER_EMAILS setting.', e?.message || e);
+    console.warn('Could not read store approval emails; using legacy APPROVER_EMAILS setting.', e?.message || e);
   }
 
   if (!to.length) {
@@ -1694,38 +1695,40 @@ export default {
 
 
       // ======================================================
-      // APPROVER EMAILS — GROUP ADMIN ONLY
+      // APPROVAL EMAILS — BY STORE
       // ======================================================
 
       if (
         p === '/api/admin/approver-emails' &&
         request.method === 'GET'
       ) {
-        // Smooth migration from the old APPROVER_EMAILS Worker variable.
-        const existing = await env.DB.prepare(`
-          SELECT COUNT(*) AS total
-          FROM approver_emails
-        `).first();
+        const storeId = Number(url.searchParams.get('store_id') || 0);
+        if (!storeId) return json({ emails: [] });
 
-        if (Number(existing?.total || 0) === 0) {
+        let { results } = await env.DB.prepare(`
+          SELECT id,store_id,email,created_at
+          FROM store_approver_emails
+          WHERE store_id=?
+          ORDER BY email COLLATE NOCASE
+        `).bind(storeId).all();
+
+        // First-use migration for this store from the old Worker variable.
+        if (!(results || []).length) {
           const legacy = String(env.APPROVER_EMAILS || '')
-            .split(',')
-            .map(x => x.trim().toLowerCase())
-            .filter(Boolean);
-
+            .split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
           for (const email of [...new Set(legacy)]) {
             await env.DB.prepare(`
-              INSERT OR IGNORE INTO approver_emails(email,created_at)
-              VALUES(?,?)
-            `).bind(email,now()).run();
+              INSERT OR IGNORE INTO store_approver_emails(store_id,email,created_at)
+              VALUES(?,?,?)
+            `).bind(storeId,email,now()).run();
           }
+          ({ results } = await env.DB.prepare(`
+            SELECT id,store_id,email,created_at
+            FROM store_approver_emails
+            WHERE store_id=?
+            ORDER BY email COLLATE NOCASE
+          `).bind(storeId).all());
         }
-
-        const { results } = await env.DB.prepare(`
-          SELECT id,email,created_at
-          FROM approver_emails
-          ORDER BY email COLLATE NOCASE
-        `).all();
 
         return json({ emails: results || [] });
       }
@@ -1735,63 +1738,55 @@ export default {
         request.method === 'POST'
       ) {
         const b = await request.json();
+        const storeId = Number(b.store_id || 0);
         const email = String(b.email || '').trim().toLowerCase();
-
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          return json({ error:'Enter a valid email address' },400);
-        }
-
+        if (!storeId) return json({ error:'Choose a store' },400);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error:'Enter a valid email address' },400);
         try {
           const r = await env.DB.prepare(`
-            INSERT INTO approver_emails(email,created_at)
-            VALUES(?,?)
-          `).bind(email,now()).run();
+            INSERT INTO store_approver_emails(store_id,email,created_at)
+            VALUES(?,?,?)
+          `).bind(storeId,email,now()).run();
           return json({ ok:true,id:r.meta.last_row_id });
         } catch (e) {
-          if (String(e?.message || e).toLowerCase().includes('unique')) {
-            return json({ error:'That approval email is already listed' },409);
-          }
+          if (String(e?.message || e).toLowerCase().includes('unique')) return json({ error:'That approval email is already listed for this store' },409);
           throw e;
         }
       }
 
       const approverEmailEdit = p.match(/^\/api\/admin\/approver-emails\/(\d+)$/);
-
       if (approverEmailEdit && request.method === 'PUT') {
         const b = await request.json();
         const email = String(b.email || '').trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          return json({ error:'Enter a valid email address' },400);
-        }
-
-        const found = await env.DB.prepare('SELECT id FROM approver_emails WHERE id=?')
-          .bind(Number(approverEmailEdit[1])).first();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error:'Enter a valid email address' },400);
+        const found = await env.DB.prepare('SELECT id FROM store_approver_emails WHERE id=?').bind(Number(approverEmailEdit[1])).first();
         if (!found) return json({ error:'Approval email not found' },404);
-
         try {
-          await env.DB.prepare('UPDATE approver_emails SET email=? WHERE id=?')
-            .bind(email,Number(approverEmailEdit[1])).run();
+          await env.DB.prepare('UPDATE store_approver_emails SET email=? WHERE id=?').bind(email,Number(approverEmailEdit[1])).run();
           return json({ ok:true });
         } catch (e) {
-          if (String(e?.message || e).toLowerCase().includes('unique')) {
-            return json({ error:'That approval email is already listed' },409);
-          }
+          if (String(e?.message || e).toLowerCase().includes('unique')) return json({ error:'That approval email is already listed for this store' },409);
           throw e;
         }
       }
 
       if (approverEmailEdit && request.method === 'DELETE') {
-        const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM approver_emails').first();
-        if (Number(count?.total || 0) <= 1) {
-          return json({ error:'At least one approval email must remain.' },409);
-        }
+        const row = await env.DB.prepare('SELECT store_id FROM store_approver_emails WHERE id=?').bind(Number(approverEmailEdit[1])).first();
+        if (!row) return json({ error:'Approval email not found' },404);
+        const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM store_approver_emails WHERE store_id=?').bind(Number(row.store_id)).first();
+        if (Number(count?.total || 0) <= 1) return json({ error:'At least one approval email must remain.' },409);
+        await env.DB.prepare('DELETE FROM store_approver_emails WHERE id=?').bind(Number(approverEmailEdit[1])).run();
+        return json({ ok:true });
+      }
 
-        const found = await env.DB.prepare('SELECT id FROM approver_emails WHERE id=?')
-          .bind(Number(approverEmailEdit[1])).first();
-        if (!found) return json({ error:'Approval email not found' },404);
-
-        await env.DB.prepare('DELETE FROM approver_emails WHERE id=?')
-          .bind(Number(approverEmailEdit[1])).run();
+      const managerEmailEdit = p.match(/^\/api\/admin\/manager-email\/(\d+)$/);
+      if (managerEmailEdit && request.method === 'PUT') {
+        const b = await request.json();
+        const email = String(b.email || '').trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error:'Enter a valid email address' },400);
+        const found = await env.DB.prepare('SELECT id FROM managers WHERE id=?').bind(Number(managerEmailEdit[1])).first();
+        if (!found) return json({ error:'Manager not found' },404);
+        await env.DB.prepare('UPDATE managers SET email=? WHERE id=?').bind(email,Number(managerEmailEdit[1])).run();
         return json({ ok:true });
       }
 

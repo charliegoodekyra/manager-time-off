@@ -578,32 +578,38 @@ button{
   </div>
 
 
-  <!-- EMAIL SETTINGS — GROUP ADMIN -->
+  <!-- EMAIL SETTINGS -->
 
-  <div id="emailSettingsCard" class="card hidden">
+  <div id="emailSettingsCard" class="card">
     <div>
       <h2 style="margin:0">Email settings</h2>
-      <div class="muted">Manage Day Off approval notifications and manager email addresses.</div>
+      <div class="muted">Manage Day Off approval notifications and manager email addresses for each store.</div>
     </div>
 
-    <h3 style="margin-top:22px">Approval emails</h3>
-    <div class="muted">Everyone listed here receives an email when a Day Off request needs manual approval.</div>
-    <div class="row" style="margin-top:10px;align-items:end;flex-wrap:wrap">
-      <div style="flex:1;min-width:240px">
-        <label>New approval email</label>
-        <input id="newApproverEmail" type="email" placeholder="admin@example.com">
+    <div class="grid2" style="margin-top:18px">
+      <div>
+        <h3 style="margin:0 0 4px">Approval emails</h3>
+        <div class="muted">These people receive an email when a Day Off request needs manual approval.</div>
+        <label style="margin-top:12px">Store</label>
+        <select id="approverEmailStore" onchange="loadApproverEmails()"></select>
+        <div class="row" style="margin-top:10px;align-items:end;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <label>New approval email</label>
+            <input id="newApproverEmail" type="email" placeholder="admin@example.com">
+          </div>
+          <button class="primary" onclick="addApproverEmail()">Add email</button>
+        </div>
+        <div id="approverEmailRows" style="margin-top:12px"></div>
       </div>
-      <button class="primary" onclick="addApproverEmail()">Add email</button>
+
+      <div>
+        <h3 style="margin:0 0 4px">Manager emails</h3>
+        <div class="muted">Update the email address used for request notifications.</div>
+        <label style="margin-top:12px">Store</label>
+        <select id="managerEmailStore" onchange="loadManagerEmailRows()"></select>
+        <div id="managerEmailRows" style="margin-top:12px"></div>
+      </div>
     </div>
-    <div id="approverEmailRows" style="margin-top:12px"></div>
-
-    <hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0">
-
-    <h3 style="margin-bottom:4px">Manager emails</h3>
-    <div class="muted">Quickly update a manager's email address without opening the full store management panel.</div>
-    <label style="margin-top:12px">Store</label>
-    <select id="managerEmailStore" onchange="loadManagerEmailRows()"></select>
-    <div id="managerEmailRows" style="margin-top:12px"></div>
   </div>
 
 
@@ -1678,14 +1684,6 @@ async function loadAdmin(){
       "group_admin"
     );
 
-  $("emailSettingsCard")
-    .classList
-    .toggle(
-      "hidden",
-      currentSession.role !==
-      "group_admin"
-    );
-
 
   if(
     currentSession.role !==
@@ -1703,10 +1701,8 @@ async function loadAdmin(){
 
   await loadStores();
 
-  if(currentSession.role === "group_admin") {
-    await loadApproverEmails();
-    await loadManagerEmailRows();
-  }
+  await loadApproverEmails();
+  await loadManagerEmailRows();
 
   setupRequestControls();
   setupHolidayCalendar();
@@ -1726,19 +1722,19 @@ let approverEmails = [];
 let managerEmailManagers = [];
 
 async function loadApproverEmails(){
-  if(currentSession?.role !== "group_admin") return;
-  const r = await fetch('/api/admin/approver-emails');
+  if(!$('approverEmailStore')) return;
+  const storeId = Number($('approverEmailStore').value || 0);
+  if(!storeId){ $('approverEmailRows').innerHTML='<p class="muted">Select a store.</p>'; return; }
+  const r = await fetch('/api/admin/approver-emails?store_id='+storeId);
   const j = await r.json();
-  if(!r.ok){ toast(j.error || 'Could not load approval emails'); return; }
+  if(!r.ok){ $('approverEmailRows').innerHTML='<p class="muted">'+esc(j.error || 'Could not load approval emails')+'</p>'; return; }
   approverEmails = j.emails || [];
   renderApproverEmails();
 }
+window.loadApproverEmails = loadApproverEmails;
 
 function renderApproverEmails(){
-  if(!approverEmails.length){
-    $('approverEmailRows').innerHTML = '<p class="muted">No approval emails configured.</p>';
-    return;
-  }
+  if(!approverEmails.length){ $('approverEmailRows').innerHTML='<p class="muted">No approval emails configured.</p>'; return; }
   $('approverEmailRows').innerHTML = approverEmails.map(x => `
     <div class="requestCard">
       <div class="row between" style="gap:10px;flex-wrap:wrap">
@@ -1752,87 +1748,60 @@ function renderApproverEmails(){
 }
 
 window.addApproverEmail = async function(){
+  const storeId = Number($('approverEmailStore').value || 0);
   const email = $('newApproverEmail').value.trim();
+  if(!storeId){ toast('Choose a store'); return; }
   if(!email){ toast('Enter an email address'); return; }
-  const r = await fetch('/api/admin/approver-emails',{
-    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email})
-  });
+  const r = await fetch('/api/admin/approver-emails',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({store_id:storeId,email})});
   const j = await r.json();
   if(!r.ok){ toast(j.error || 'Could not add email'); return; }
-  $('newApproverEmail').value='';
-  toast('Approval email added');
-  await loadApproverEmails();
+  $('newApproverEmail').value=''; toast('Approval email added'); await loadApproverEmails();
 };
 
 window.editApproverEmail = async function(id){
-  const item = approverEmails.find(x => Number(x.id) === Number(id));
-  if(!item) return;
-  const email = prompt('Approval email address',item.email || '');
-  if(email === null) return;
-  const r = await fetch(`/api/admin/approver-emails/${id}`,{
-    method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.trim()})
-  });
-  const j = await r.json();
-  if(!r.ok){ toast(j.error || 'Could not update email'); return; }
-  toast('Approval email updated');
-  await loadApproverEmails();
+  const item = approverEmails.find(x => Number(x.id) === Number(id)); if(!item) return;
+  const email = prompt('Approval email address',item.email || ''); if(email === null) return;
+  const r = await fetch(`/api/admin/approver-emails/${id}`,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.trim()})});
+  const j = await r.json(); if(!r.ok){ toast(j.error || 'Could not update email'); return; }
+  toast('Approval email updated'); await loadApproverEmails();
 };
 
 window.removeApproverEmail = async function(id){
-  const item = approverEmails.find(x => Number(x.id) === Number(id));
-  if(!item) return;
+  const item = approverEmails.find(x => Number(x.id) === Number(id)); if(!item) return;
   if(!confirm(`Remove ${item.email} from approval notifications?`)) return;
   const r = await fetch(`/api/admin/approver-emails/${id}`,{method:'DELETE'});
-  const j = await r.json();
-  if(!r.ok){ toast(j.error || 'Could not remove email'); return; }
-  toast('Approval email removed');
-  await loadApproverEmails();
+  const j = await r.json(); if(!r.ok){ toast(j.error || 'Could not remove email'); return; }
+  toast('Approval email removed'); await loadApproverEmails();
 };
 
 async function loadManagerEmailRows(){
-  if(currentSession?.role !== "group_admin" || !$('managerEmailStore')) return;
+  if(!$('managerEmailStore')) return;
   const storeId = Number($('managerEmailStore').value || 0);
   if(!storeId){ $('managerEmailRows').innerHTML='<p class="muted">Select a store.</p>'; return; }
-  const r = await fetch('/api/admin/managers?store_id='+storeId);
-  const j = await r.json();
-  if(!r.ok){ toast(j.error || 'Could not load managers'); return; }
-  managerEmailManagers = j.managers || [];
-  renderManagerEmailRows();
+  const r = await fetch('/api/admin/managers?store_id='+storeId); const j = await r.json();
+  if(!r.ok){ $('managerEmailRows').innerHTML='<p class="muted">'+esc(j.error || 'Could not load managers')+'</p>'; return; }
+  managerEmailManagers = j.managers || []; renderManagerEmailRows();
 }
 window.loadManagerEmailRows = loadManagerEmailRows;
 
 function renderManagerEmailRows(){
-  if(!managerEmailManagers.length){
-    $('managerEmailRows').innerHTML='<p class="muted">No managers added for this store yet.</p>';
-    return;
-  }
+  if(!managerEmailManagers.length){ $('managerEmailRows').innerHTML='<p class="muted">No managers added for this store yet.</p>'; return; }
   $('managerEmailRows').innerHTML = managerEmailManagers.map(m => `
     <div class="requestCard">
       <div class="row between" style="gap:10px;flex-wrap:wrap">
-        <div>
-          <b>${esc(m.name)}</b>
-          <div class="meta">${esc(m.email || 'No email address')}</div>
-        </div>
+        <div><b>${esc(m.name)}</b><div class="meta">${esc(m.email || 'No email address')}</div></div>
         <button class="secondary" onclick="editManagerEmailQuick(${m.id})">Edit email</button>
       </div>
     </div>`).join('');
 }
 
 window.editManagerEmailQuick = async function(id){
-  const manager = managerEmailManagers.find(m => Number(m.id) === Number(id));
-  if(!manager) return;
-  const email = prompt(`Email address for ${manager.name}`,manager.email || '');
-  if(email === null) return;
+  const manager = managerEmailManagers.find(m => Number(m.id) === Number(id)); if(!manager) return;
+  const email = prompt(`Email address for ${manager.name}`,manager.email || ''); if(email === null) return;
   if(!email.trim()){ toast('Enter an email address'); return; }
-  const r = await fetch(`/api/admin/managers/${id}`,{
-    method:'PUT',
-    headers:{'content-type':'application/json'},
-    body:JSON.stringify({name:manager.name,email:email.trim(),active:Number(manager.active)===1})
-  });
-  const j = await r.json();
-  if(!r.ok){ toast(j.error || 'Could not update manager email'); return; }
-  toast('Manager email updated');
-  await loadManagerEmailRows();
+  const r = await fetch(`/api/admin/manager-email/${id}`,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({email:email.trim()})});
+  const j = await r.json(); if(!r.ok){ toast(j.error || 'Could not update manager email'); return; }
+  toast('Manager email updated'); await loadManagerEmailRows();
   if($('managerStore') && Number($('managerStore').value) === Number($('managerEmailStore').value)) await loadManagers();
 };
 
@@ -2014,6 +1983,17 @@ async function loadStores(){
   }
 
 
+  $("approverEmailStore").innerHTML =
+    activeStores.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");
+  $("managerEmailStore").innerHTML =
+    activeStores.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");
+
+  if(currentSession.role!=="group_admin"&&activeStores[0]){
+    $("approverEmailStore").value=activeStores[0].id;
+    $("managerEmailStore").value=activeStores[0].id;
+  }
+
+
   $("managerStore").innerHTML =
     activeStores.map(
       s =>
@@ -2023,13 +2003,6 @@ async function loadStores(){
         </option>
         `
     ).join("");
-
-  if($("managerEmailStore")) {
-    $("managerEmailStore").innerHTML =
-      activeStores.map(
-        s => `<option value="${s.id}">${esc(s.name)}</option>`
-      ).join("");
-  }
 
 
   if(

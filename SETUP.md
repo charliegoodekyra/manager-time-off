@@ -45,13 +45,3 @@ Not used by this version. You may leave the old deployment in place temporarily 
 5. Submit a clear 7-day Holiday — it should auto-approve and appear on the admin calendar.
 6. Delete that future request from the Requests list — it should disappear from the calendar.
 7. Close a month and verify normal manager submissions are blocked with the CLOSED message.
-
-
-## Email settings update
-Run `migrations/0004_approver_emails.sql` (or the full `RUN_THIS_ON_D1.sql`) once.
-
-After deployment, Group Admin gets an **Email settings** card on `/admin` where you can:
-- add, edit and remove Day Off approval notification emails;
-- quickly edit manager email addresses by store.
-
-The first time the Approval Emails section is opened, any addresses in the legacy `APPROVER_EMAILS` Worker variable are copied into D1 automatically. After at least one D1 approval email exists, Day Off approval notifications use the D1 list. The last approval email cannot be removed.

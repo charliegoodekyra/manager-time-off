@@ -126,7 +126,6 @@ export async function guard(req,env){
     return {response:reply({stores:s?[s]:[]})};
   }
   if(p.startsWith('/api/admin/stores')&&auth.role!=='group_admin')return {response:reply({error:'Group admin required'},403)};
-  if(p.startsWith('/api/admin/approver-emails')&&auth.role!=='group_admin')return {response:reply({error:'Group admin required'},403)};
 
   // Store scope managers/requests server-side.
   if(p==='/api/admin/managers'&&auth.role==='store'){
@@ -135,6 +134,28 @@ export async function guard(req,env){
     if(requested&&Number(requested)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
     url.searchParams.set('store_id',String(auth.store_id));req=new Request(url,req);
   }
+  if(p==='/api/admin/approver-emails'&&auth.role==='store'){
+    let requested=url.searchParams.get('store_id');
+    if(!requested && !['GET','HEAD'].includes(req.method)){
+      let body={};try{body=await req.clone().json();}catch{}
+      requested=body.store_id;
+    }
+    if(requested&&Number(requested)!==auth.store_id)return {response:reply({error:'Store access denied'},403)};
+    if(['GET','HEAD'].includes(req.method)){
+      url.searchParams.set('store_id',String(auth.store_id));req=new Request(url,req);
+    }
+  }
+  const approverEmailEdit=p.match(/^\/api\/admin\/approver-emails\/(\d+)$/);
+  if(approverEmailEdit&&auth.role==='store'){
+    const row=await env.DB.prepare('SELECT store_id FROM store_approver_emails WHERE id=?').bind(Number(approverEmailEdit[1])).first();
+    if(!row||Number(row.store_id)!==auth.store_id)return {response:reply({error:'Approval email not found'},404)};
+  }
+  const managerEmailEdit=p.match(/^\/api\/admin\/manager-email\/(\d+)$/);
+  if(managerEmailEdit&&auth.role==='store'){
+    const row=await env.DB.prepare('SELECT store_id FROM managers WHERE id=?').bind(Number(managerEmailEdit[1])).first();
+    if(!row||Number(row.store_id)!==auth.store_id)return {response:reply({error:'Manager not found'},404)};
+  }
+
   if(p==='/api/admin/requests'&&auth.role==='store'){
     if(req.method!=='GET')return {response:reply({error:'Store access denied'},403)};
     const requested=url.searchParams.get('store_id');
@@ -199,6 +220,7 @@ export async function guard(req,env){
     /^\/api\/admin\/managers\/\d+$/.test(p) ||
     p==='/api/admin/approver-emails' ||
     /^\/api\/admin\/approver-emails\/\d+$/.test(p) ||
+    /^\/api\/admin\/manager-email\/\d+$/.test(p) ||
     p==='/api/admin/requests' ||
     p==='/api/admin/request-blocks' ||
     p==='/api/admin/requests/on-behalf' ||
