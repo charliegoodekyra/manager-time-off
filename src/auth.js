@@ -126,6 +126,7 @@ export async function guard(req,env){
     return {response:reply({stores:s?[s]:[]})};
   }
   if(p.startsWith('/api/admin/stores')&&auth.role!=='group_admin')return {response:reply({error:'Group admin required'},403)};
+  if(p.startsWith('/api/admin/approver-emails')&&auth.role!=='group_admin')return {response:reply({error:'Group admin required'},403)};
 
   // Store scope managers/requests server-side.
   if(p==='/api/admin/managers'&&auth.role==='store'){
@@ -196,6 +197,8 @@ export async function guard(req,env){
     cred ||
     p==='/api/admin/managers' ||
     /^\/api\/admin\/managers\/\d+$/.test(p) ||
+    p==='/api/admin/approver-emails' ||
+    /^\/api\/admin\/approver-emails\/\d+$/.test(p) ||
     p==='/api/admin/requests' ||
     p==='/api/admin/request-blocks' ||
     p==='/api/admin/requests/on-behalf' ||
