@@ -193,7 +193,7 @@ async function sendEmail(
           margin-top:4px;
         "
       >
-        Kyra Operations
+        Rothwell A14 Eastbound
       </div>
 
     </div>
@@ -345,7 +345,7 @@ async function sendEmail(
           text-align:center;
         "
       >
-        Manager Time Off • Kyra Operations
+        Manager Time Off • Rothwell A14 Eastbound
       </div>
 
     </div>
