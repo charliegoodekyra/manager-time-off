@@ -3086,7 +3086,16 @@ window.loadManagerHolidayCalendar=async()=>{
   const r=await fetch('/api/public/holiday-calendar?'+q.toString());
   const j=await r.json();
   if(!r.ok){$('managerHolidayCalendarGrid').innerHTML=`<div class="muted">${esc(j.error||'Could not load holiday calendar')}</div>`;return;}
-  renderHolidayCalendarInto('managerHolidayCalendarGrid',s.year,s.month,j.holidays||[],j.day_offs||[],j.zones||[]);
+  // Prefer the unified public bookings feed. The legacy holiday/day_off
+  // arrays are retained as a fallback for compatibility with older deployments.
+  const bookings=Array.isArray(j.bookings)?j.bookings:[];
+  const holidays=bookings.length
+    ? bookings.filter(b=>String(b.request_type||'').trim().toUpperCase()==='HOLIDAY')
+    : (j.holidays||[]);
+  const dayOffs=bookings.length
+    ? bookings.filter(b=>String(b.request_type||'').trim().toUpperCase()==='DAY OFF')
+    : (j.day_offs||[]);
+  renderHolidayCalendarInto('managerHolidayCalendarGrid',s.year,s.month,holidays,dayOffs,j.zones||[]);
 };
 
 /* ========================================================= */

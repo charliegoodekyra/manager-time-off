@@ -1141,26 +1141,20 @@ export default {
         if(!store)return json({error:'Store not found'},404);
         const monthStart=`${year}-${String(month).padStart(2,'0')}-01`;
         const nextMonth=month===12?`${year+1}-01-01`:`${year}-${String(month+1).padStart(2,'0')}-01`;
-        const {results:holidays}=await env.DB.prepare(`
-          SELECT manager_name,start_date,end_date
+        // Return all approved time-off bookings in one result so the
+        // manager-facing calendar cannot accidentally omit Day Off entries.
+        const {results:bookings}=await env.DB.prepare(`
+          SELECT manager_name,request_type,start_date,end_date
           FROM requests
           WHERE store_id=?
-            AND request_type='HOLIDAY'
             AND status='APPROVED'
+            AND UPPER(TRIM(request_type)) IN ('HOLIDAY','DAY OFF')
             AND start_date<?
             AND end_date>=?
           ORDER BY start_date ASC,manager_name COLLATE NOCASE
         `).bind(storeId,nextMonth,monthStart).all();
-        const {results:dayOffs}=await env.DB.prepare(`
-          SELECT manager_name,start_date,end_date
-          FROM requests
-          WHERE store_id=?
-            AND request_type='DAY OFF'
-            AND status='APPROVED'
-            AND start_date<?
-            AND end_date>=?
-          ORDER BY start_date ASC,manager_name COLLATE NOCASE
-        `).bind(storeId,nextMonth,monthStart).all();
+        const holidays=(bookings||[]).filter(r=>String(r.request_type||'').trim().toUpperCase()==='HOLIDAY');
+        const dayOffs=(bookings||[]).filter(r=>String(r.request_type||'').trim().toUpperCase()==='DAY OFF');
         const {results:zones}=await env.DB.prepare(`
           SELECT start_date,end_date,reason
           FROM holiday_no_go_zones
@@ -1169,7 +1163,7 @@ export default {
             AND end_date>=?
           ORDER BY start_date ASC,id ASC
         `).bind(storeId,nextMonth,monthStart).all();
-        return json({holidays:holidays||[],day_offs:dayOffs||[],zones:zones||[]});
+        return json({bookings:bookings||[],holidays,day_offs:dayOffs,zones:zones||[]});
       }
 
       // ======================================================

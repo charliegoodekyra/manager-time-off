@@ -45,3 +45,7 @@ Not used by this version. You may leave the old deployment in place temporarily 
 5. Submit a clear 7-day Holiday — it should auto-approve and appear on the admin calendar.
 6. Delete that future request from the Requests list — it should disappear from the calendar.
 7. Close a month and verify normal manager submissions are blocked with the CLOSED message.
+
+
+## Manager-facing calendar fix
+The public time-off calendar now uses one unified approved-bookings feed for both HOLIDAY and DAY OFF records, then renders them separately (green and blue). No database migration is required for this fix.
