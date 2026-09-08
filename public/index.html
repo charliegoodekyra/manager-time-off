@@ -252,9 +252,10 @@ button{
 .calendarDay.noGo{background:#fff4f3;border-color:#f3b7b2}
 .calendarDate{font-size:12px;font-weight:900;margin-bottom:5px}
 .calendarEvent{font-size:11px;line-height:1.25;padding:4px 5px;border-radius:6px;margin-top:4px;background:#e8f5e9;color:#166534;font-weight:700}
+.calendarDayOff{font-size:11px;line-height:1.25;padding:4px 5px;border-radius:6px;margin-top:4px;background:#e8efff;color:#1d4ed8;font-weight:700}
 .calendarNoGo{font-size:11px;line-height:1.25;padding:4px 5px;border-radius:6px;margin-top:4px;background:#b3261e;color:white;font-weight:800}
 .zoneRow{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:8px}
-@media(max-width:700px){.holidayCalendarGrid{gap:3px}.calendarDay{min-height:86px;padding:4px}.calendarEvent,.calendarNoGo{font-size:9px;padding:3px}.calendarDow{font-size:9px}}
+@media(max-width:700px){.holidayCalendarGrid{gap:3px}.calendarDay{min-height:86px;padding:4px}.calendarEvent,.calendarDayOff,.calendarNoGo{font-size:9px;padding:3px}.calendarDow{font-size:9px}}
 
 
 /* ========================================================= */
@@ -291,7 +292,7 @@ button{
     padding:18px;
   }
   #holidayCalendarCard .calendarDay{min-height:74px;padding:5px}
-  #holidayCalendarCard .calendarEvent,#holidayCalendarCard .calendarNoGo{font-size:9px;padding:3px 4px}
+  #holidayCalendarCard .calendarEvent,#holidayCalendarCard .calendarDayOff,#holidayCalendarCard .calendarNoGo{font-size:9px;padding:3px 4px}
   #holidayCalendarCard .calendarDow{font-size:10px}
 }
 @media(max-width:1049px){
@@ -496,8 +497,8 @@ button{
     <div id="managerHolidayCalendar" class="bookingPanel managerCalendarCard">
       <div class="managerCalendarHeader">
         <div>
-          <div class="bookingPanelTitle">📅 Holiday availability calendar</div>
-          <div class="muted">See approved holidays and No Go Zones before choosing your dates.</div>
+          <div class="bookingPanelTitle">📅 Time off availability calendar</div>
+          <div class="muted">See approved holidays, approved Day Offs and No Go Zones before choosing your dates.</div>
         </div>
         <input id="managerCalendarMonth" type="month" onchange="loadManagerHolidayCalendar()" style="max-width:190px">
       </div>
@@ -752,8 +753,8 @@ button{
   <div id="holidayCalendarCard" class="card">
     <div class="row between">
       <div class="cardTitle"><span class="cardIcon iconGreen">📅</span><div>
-        <h2 style="margin:0">Holiday calendar</h2>
-        <div class="muted">Approved holidays and Holiday no-go zones from the database.</div>
+        <h2 style="margin:0">Time off calendar</h2>
+        <div class="muted">Approved holidays, approved Day Offs and Holiday no-go zones from the database.</div>
       </div></div>
       <button class="secondary" onclick="openNoGoPanel()"><span class="buttonIcon">⛔</span>Add No Go Zone</button>
     </div>
@@ -3085,7 +3086,7 @@ window.loadManagerHolidayCalendar=async()=>{
   const r=await fetch('/api/public/holiday-calendar?'+q.toString());
   const j=await r.json();
   if(!r.ok){$('managerHolidayCalendarGrid').innerHTML=`<div class="muted">${esc(j.error||'Could not load holiday calendar')}</div>`;return;}
-  renderHolidayCalendarInto('managerHolidayCalendarGrid',s.year,s.month,j.holidays||[],j.zones||[]);
+  renderHolidayCalendarInto('managerHolidayCalendarGrid',s.year,s.month,j.holidays||[],j.day_offs||[],j.zones||[]);
 };
 
 /* ========================================================= */
@@ -3128,11 +3129,11 @@ async function loadHolidayCalendar(){
   const r=await fetch('/api/admin/holiday-calendar?'+q.toString());
   const j=await r.json();
   if(!r.ok){toast(j.error||'Could not load holiday calendar');return;}
-  renderHolidayCalendar(s.year,s.month,j.holidays||[],j.zones||[]);
+  renderHolidayCalendar(s.year,s.month,j.holidays||[],j.day_offs||[],j.zones||[]);
   renderNoGoRows(j.zones||[]);
 }
 
-function renderHolidayCalendarInto(targetId,year,month,holidays,zones){
+function renderHolidayCalendarInto(targetId,year,month,holidays,dayOffs,zones){
   const grid=$(targetId);
   const labels=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let out=labels.map(x=>`<div class="calendarDow">${x}</div>`).join('');
@@ -3145,17 +3146,19 @@ function renderHolidayCalendarInto(targetId,year,month,holidays,zones){
     const outside=d.getMonth()!==month-1;
     const dayZones=zones.filter(z=>iso>=z.start_date&&iso<=z.end_date);
     const dayHolidays=holidays.filter(h=>iso>=h.start_date&&iso<=h.end_date);
+    const dayOffBookings=dayOffs.filter(o=>iso>=o.start_date&&iso<=o.end_date);
     out+=`<div class="calendarDay ${outside?'outside':''} ${dayZones.length?'noGo':''}">`+
       `<div class="calendarDate">${d.getDate()}</div>`+
       dayZones.map(z=>`<div class="calendarNoGo" title="${esc(z.reason||'No Holiday bookings')}">NO GO${z.reason?': '+esc(z.reason):''}</div>`).join('')+
-      dayHolidays.map(h=>`<div class="calendarEvent">${esc(h.manager_name)}</div>`).join('')+
+      dayHolidays.map(h=>`<div class="calendarEvent">HOLIDAY · ${esc(h.manager_name)}</div>`).join('')+
+      dayOffBookings.map(o=>`<div class="calendarDayOff">DAY OFF · ${esc(o.manager_name)}</div>`).join('')+
       `</div>`;
   }
   grid.innerHTML=out;
 }
 
-function renderHolidayCalendar(year,month,holidays,zones){
-  renderHolidayCalendarInto('holidayCalendarGrid',year,month,holidays,zones);
+function renderHolidayCalendar(year,month,holidays,dayOffs,zones){
+  renderHolidayCalendarInto('holidayCalendarGrid',year,month,holidays,dayOffs,zones);
 }
 
 function renderNoGoRows(zones){

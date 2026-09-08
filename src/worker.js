@@ -1151,6 +1151,16 @@ export default {
             AND end_date>=?
           ORDER BY start_date ASC,manager_name COLLATE NOCASE
         `).bind(storeId,nextMonth,monthStart).all();
+        const {results:dayOffs}=await env.DB.prepare(`
+          SELECT manager_name,start_date,end_date
+          FROM requests
+          WHERE store_id=?
+            AND request_type='DAY OFF'
+            AND status='APPROVED'
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,manager_name COLLATE NOCASE
+        `).bind(storeId,nextMonth,monthStart).all();
         const {results:zones}=await env.DB.prepare(`
           SELECT start_date,end_date,reason
           FROM holiday_no_go_zones
@@ -1159,7 +1169,7 @@ export default {
             AND end_date>=?
           ORDER BY start_date ASC,id ASC
         `).bind(storeId,nextMonth,monthStart).all();
-        return json({holidays:holidays||[],zones:zones||[]});
+        return json({holidays:holidays||[],day_offs:dayOffs||[],zones:zones||[]});
       }
 
       // ======================================================
@@ -2216,6 +2226,16 @@ export default {
             AND end_date>=?
           ORDER BY start_date ASC,manager_name COLLATE NOCASE
         `).bind(storeId,nextMonth,monthStart).all();
+        const {results:dayOffs}=await env.DB.prepare(`
+          SELECT id,manager_id,manager_name,start_date,end_date,notes,status
+          FROM requests
+          WHERE store_id=?
+            AND request_type='DAY OFF'
+            AND status='APPROVED'
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,manager_name COLLATE NOCASE
+        `).bind(storeId,nextMonth,monthStart).all();
         const {results:zones}=await env.DB.prepare(`
           SELECT id,start_date,end_date,reason,created_at,created_by
           FROM holiday_no_go_zones
@@ -2224,7 +2244,7 @@ export default {
             AND end_date>=?
           ORDER BY start_date ASC,id ASC
         `).bind(storeId,nextMonth,monthStart).all();
-        return json({holidays:holidays||[],zones:zones||[]});
+        return json({holidays:holidays||[],day_offs:dayOffs||[],zones:zones||[]});
       }
 
       // ======================================================
