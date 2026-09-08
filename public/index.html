@@ -57,7 +57,7 @@ h1{
 }
 
 main{
-  max-width:960px;
+  max-width:1460px;
   margin:auto;
   padding:14px
 }
@@ -256,6 +256,48 @@ button{
 .zoneRow{border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:8px}
 @media(max-width:700px){.holidayCalendarGrid{gap:3px}.calendarDay{min-height:86px;padding:4px}.calendarEvent,.calendarNoGo{font-size:9px;padding:3px}.calendarDow{font-size:9px}}
 
+
+/* ========================================================= */
+/* POLISHED DASHBOARD LAYOUT */
+/* ========================================================= */
+.cardTitle{display:flex;align-items:center;gap:10px}
+.cardIcon{width:42px;height:42px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto}
+.iconBlue{background:#eaf2ff}.iconGreen{background:#eaf9ef}.iconGold{background:#fff7dc}.iconPurple{background:#f4ecff}
+.buttonIcon{display:inline-block;margin-right:6px}
+#requestView{max-width:980px;margin:0 auto}
+.managerCalendarCard{margin-top:12px}
+.managerCalendarHeader{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.managerCalendarLegend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted)}
+.legendDot{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px}
+.legendHoliday{background:#86efac}.legendNoGo{background:#fca5a5}
+
+@media(min-width:1050px){
+  #adminView:not(.hidden){
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:18px;
+    align-items:stretch;
+  }
+  #adminView > .card{margin-bottom:0}
+  #adminTopCard{grid-column:1/-1}
+  #requestControlsCard{grid-column:1;grid-row:2;min-height:405px}
+  #holidayCalendarCard{grid-column:2;grid-row:2;min-height:405px}
+  #requestsCard{grid-column:1;grid-row:3;min-height:470px}
+  #emailSettingsCard{grid-column:2;grid-row:3;min-height:470px}
+  #onBehalfPanel,#noGoPanel,#managePanel{grid-column:1/-1}
+  #requestControlsCard,#holidayCalendarCard,#requestsCard,#emailSettingsCard{
+    border:1px solid #e5e7eb;
+    box-shadow:0 6px 22px rgba(17,24,39,.06);
+    padding:18px;
+  }
+  #holidayCalendarCard .calendarDay{min-height:74px;padding:5px}
+  #holidayCalendarCard .calendarEvent,#holidayCalendarCard .calendarNoGo{font-size:9px;padding:3px 4px}
+  #holidayCalendarCard .calendarDow{font-size:10px}
+}
+@media(max-width:1049px){
+  #adminView{display:block}
+}
+
 #toast{
   position:fixed;
   bottom:20px;
@@ -451,6 +493,27 @@ button{
     </div>
 
 
+    <div id="managerHolidayCalendar" class="bookingPanel managerCalendarCard">
+      <div class="managerCalendarHeader">
+        <div>
+          <div class="bookingPanelTitle">📅 Holiday availability calendar</div>
+          <div class="muted">See approved holidays and No Go Zones before choosing your dates.</div>
+        </div>
+        <input id="managerCalendarMonth" type="month" onchange="loadManagerHolidayCalendar()" style="max-width:190px">
+      </div>
+      <div class="holidayCalendarToolbar">
+        <button class="secondary" onclick="changeManagerCalendarMonth(-1)">← Previous</button>
+        <button class="secondary" onclick="managerCalendarToday()">This month</button>
+        <button class="secondary" onclick="changeManagerCalendarMonth(1)">Next →</button>
+      </div>
+      <div class="managerCalendarLegend">
+        <span><i class="legendDot legendHoliday"></i>Approved holiday</span>
+        <span><i class="legendDot legendNoGo"></i>No Go Zone — Holiday requests unavailable</span>
+      </div>
+      <div id="managerHolidayCalendarGrid" class="holidayCalendarGrid"></div>
+    </div>
+
+
     <label>
       Notes
     </label>
@@ -554,7 +617,7 @@ button{
 >
 
 
-  <div class="card row between">
+  <div id="adminTopCard" class="card row between">
 
     <div>
 
@@ -582,8 +645,8 @@ button{
 
   <div id="emailSettingsCard" class="card">
     <div>
-      <h2 style="margin:0">Email settings</h2>
-      <div class="muted">Manage Day Off approval notifications and manager email addresses for each store.</div>
+      <div class="cardTitle"><span class="cardIcon iconPurple">✉️</span><div><h2 style="margin:0">Email settings</h2>
+      <div class="muted">Manage Day Off approval notifications and manager email addresses for each store.</div></div></div>
     </div>
 
     <div class="grid2" style="margin-top:18px">
@@ -615,12 +678,12 @@ button{
 
   <!-- REQUEST CONTROLS -->
 
-  <div class="card">
+  <div id="requestControlsCard" class="card">
 
     <div class="row between">
       <div>
-        <h2 style="margin:0">Request controls</h2>
-        <div class="muted">Close or reopen requests by store and month.</div>
+        <div class="cardTitle"><span class="cardIcon iconBlue">🗓️</span><div><h2 style="margin:0">Request controls</h2>
+        <div class="muted">Close or reopen requests by store and month.</div></div></div>
       </div>
     </div>
 
@@ -638,9 +701,9 @@ button{
     <div id="requestControlStatus" class="monthControlStatus open">OPEN — managers can submit requests for this month.</div>
 
     <div class="row" style="margin-top:12px;flex-wrap:wrap">
-      <button id="closeRequestsButton" class="danger" onclick="closeRequestsForMonth()">Close Requests</button>
-      <button id="reopenRequestsButton" class="primary hidden" onclick="reopenRequestsForMonth()">Reopen Requests</button>
-      <button class="secondary" onclick="openOnBehalf()">+ Add Request on Behalf of Manager</button>
+      <button id="closeRequestsButton" class="danger" onclick="closeRequestsForMonth()">🔒 Close Requests</button>
+      <button id="reopenRequestsButton" class="primary hidden" onclick="reopenRequestsForMonth()">🔓 Reopen Requests</button>
+      <button class="secondary" onclick="openOnBehalf()">➕ Add Request on Behalf of Manager</button>
     </div>
 
   </div>
@@ -686,13 +749,13 @@ button{
 
   <!-- HOLIDAY CALENDAR -->
 
-  <div class="card">
+  <div id="holidayCalendarCard" class="card">
     <div class="row between">
-      <div>
+      <div class="cardTitle"><span class="cardIcon iconGreen">📅</span><div>
         <h2 style="margin:0">Holiday calendar</h2>
         <div class="muted">Approved holidays and Holiday no-go zones from the database.</div>
-      </div>
-      <button class="secondary" onclick="openNoGoPanel()">+ Add No Go Zone</button>
+      </div></div>
+      <button class="secondary" onclick="openNoGoPanel()"><span class="buttonIcon">⛔</span>Add No Go Zone</button>
     </div>
 
     <div class="grid2">
@@ -746,20 +809,20 @@ button{
 
   <!-- REQUESTS -->
 
-  <div class="card">
+  <div id="requestsCard" class="card">
 
 
     <div class="row between">
 
       <div>
 
-        <h2 style="margin:0">
+        <div class="cardTitle"><span class="cardIcon iconGold">📋</span><div><h2 style="margin:0">
           Requests
         </h2>
 
         <div class="muted">
           Day Off requests require manual approval. Holidays are automated.
-        </div>
+        </div></div></div>
 
       </div>
 
@@ -1313,6 +1376,9 @@ async function loadPublicStore(slug){
         </option>
         `
     ).join("");
+
+  setupManagerHolidayCalendar();
+  await loadManagerHolidayCalendar();
 
 }
 
@@ -2988,6 +3054,41 @@ window.submitOnBehalf=async()=>{
 
 
 /* ========================================================= */
+/* PUBLIC HOLIDAY AVAILABILITY CALENDAR */
+/* ========================================================= */
+function setupManagerHolidayCalendar(){
+  if(!$('managerCalendarMonth'))return;
+  if(!$('managerCalendarMonth').value){
+    const d=new Date();
+    $('managerCalendarMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  }
+}
+function selectedManagerCalendarMonth(){
+  const m=String($('managerCalendarMonth')?.value||'').match(/^(\d{4})-(\d{2})$/);
+  return m?{year:Number(m[1]),month:Number(m[2])}:null;
+}
+window.changeManagerCalendarMonth=(delta)=>{
+  const s=selectedManagerCalendarMonth();if(!s)return;
+  const d=new Date(s.year,s.month-1+delta,1);
+  $('managerCalendarMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  loadManagerHolidayCalendar();
+};
+window.managerCalendarToday=()=>{
+  const d=new Date();
+  $('managerCalendarMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  loadManagerHolidayCalendar();
+};
+window.loadManagerHolidayCalendar=async()=>{
+  if(!currentStore||!$('managerCalendarMonth'))return;
+  const s=selectedManagerCalendarMonth();if(!s)return;
+  const q=new URLSearchParams({store_id:String(currentStore.id),year:String(s.year),month:String(s.month)});
+  const r=await fetch('/api/public/holiday-calendar?'+q.toString());
+  const j=await r.json();
+  if(!r.ok){$('managerHolidayCalendarGrid').innerHTML=`<div class="muted">${esc(j.error||'Could not load holiday calendar')}</div>`;return;}
+  renderHolidayCalendarInto('managerHolidayCalendarGrid',s.year,s.month,j.holidays||[],j.zones||[]);
+};
+
+/* ========================================================= */
 /* HOLIDAY CALENDAR + NO GO ZONES */
 /* ========================================================= */
 
@@ -3031,8 +3132,8 @@ async function loadHolidayCalendar(){
   renderNoGoRows(j.zones||[]);
 }
 
-function renderHolidayCalendar(year,month,holidays,zones){
-  const grid=$('holidayCalendarGrid');
+function renderHolidayCalendarInto(targetId,year,month,holidays,zones){
+  const grid=$(targetId);
   const labels=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let out=labels.map(x=>`<div class="calendarDow">${x}</div>`).join('');
   const first=new Date(year,month-1,1);
@@ -3051,6 +3152,10 @@ function renderHolidayCalendar(year,month,holidays,zones){
       `</div>`;
   }
   grid.innerHTML=out;
+}
+
+function renderHolidayCalendar(year,month,holidays,zones){
+  renderHolidayCalendarInto('holidayCalendarGrid',year,month,holidays,zones);
 }
 
 function renderNoGoRows(zones){
@@ -3330,7 +3435,7 @@ async function loadRequests(){
               String(x.start_date) >= new Date().toISOString().slice(0,10)
                 ? `
                   <div class="row" style="margin-top:10px">
-                    <button class="danger" onclick="deleteFutureRequest(${x.id})">Delete future request</button>
+                    <button class="danger" onclick="deleteFutureRequest(${x.id})">🗑️ Delete future request</button>
                   </div>
                   `
                 : ""

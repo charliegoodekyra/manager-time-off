@@ -1124,6 +1124,45 @@ export default {
       }
 
       // ======================================================
+      // PUBLIC — READ-ONLY HOLIDAY CALENDAR
+      // ======================================================
+
+      if (
+        p === '/api/public/holiday-calendar' &&
+        request.method === 'GET'
+      ) {
+        const storeId=Number(url.searchParams.get('store_id')||0);
+        const year=Number(url.searchParams.get('year')||0);
+        const month=Number(url.searchParams.get('month')||0);
+        if(!storeId||!Number.isInteger(year)||!Number.isInteger(month)||month<1||month>12){
+          return json({error:'Store, year and month are required'},400);
+        }
+        const store=await env.DB.prepare('SELECT id FROM stores WHERE id=? AND active=1').bind(storeId).first();
+        if(!store)return json({error:'Store not found'},404);
+        const monthStart=`${year}-${String(month).padStart(2,'0')}-01`;
+        const nextMonth=month===12?`${year+1}-01-01`:`${year}-${String(month+1).padStart(2,'0')}-01`;
+        const {results:holidays}=await env.DB.prepare(`
+          SELECT manager_name,start_date,end_date
+          FROM requests
+          WHERE store_id=?
+            AND request_type='HOLIDAY'
+            AND status='APPROVED'
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,manager_name COLLATE NOCASE
+        `).bind(storeId,nextMonth,monthStart).all();
+        const {results:zones}=await env.DB.prepare(`
+          SELECT start_date,end_date,reason
+          FROM holiday_no_go_zones
+          WHERE store_id=?
+            AND start_date<?
+            AND end_date>=?
+          ORDER BY start_date ASC,id ASC
+        `).bind(storeId,nextMonth,monthStart).all();
+        return json({holidays:holidays||[],zones:zones||[]});
+      }
+
+      // ======================================================
       // SUBMIT REQUEST
       // ======================================================
 
