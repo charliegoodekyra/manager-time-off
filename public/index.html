@@ -15,19 +15,40 @@
 <meta name="theme-color" content="#111827">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Manager Time Off">
-<link id="adminManifest" rel="manifest" href="/admin-manifest.webmanifest">
-<link rel="icon" href="/admin-icon-192.png" sizes="192x192" type="image/png">
-<link rel="apple-touch-icon" href="/admin-icon-180.png">
+<meta id="appleAppTitle" name="apple-mobile-web-app-title" content="Manager Time Off">
+<link id="appManifest" rel="manifest" href="/admin-manifest.webmanifest">
+<link id="appIcon" rel="icon" href="/admin-icon-192.png" sizes="192x192" type="image/png">
+<link id="appleTouchIcon" rel="apple-touch-icon" href="/admin-icon-180.png">
 
 <script>
-if(location.pathname!=="/admin"){
-  document.getElementById("adminManifest")?.remove();
-}
+(function(){
+  const p=location.pathname;
+  const requestRoute=(
+    p==="/rothwell" ||
+    p==="/rothwell/" ||
+    p==="/request/rothwell-a14-eastbound"
+  );
+
+  if(requestRoute){
+    document.getElementById("appManifest").href="/request-manifest.webmanifest";
+    document.getElementById("appIcon").href="/request-icon-192.png";
+    document.getElementById("appleTouchIcon").href="/request-icon-180.png";
+    document.getElementById("appleAppTitle").content="Manager Requests";
+  }else if(p!=="/admin"){
+    document.getElementById("appManifest")?.remove();
+  }
+})();
 
 window.__timeOffInstallPrompt=null;
 window.addEventListener("beforeinstallprompt",function(event){
-  if(location.pathname!=="/admin") return;
+  const p=location.pathname;
+  const installable=(
+    p==="/admin" ||
+    p==="/rothwell" ||
+    p==="/rothwell/" ||
+    p==="/request/rothwell-a14-eastbound"
+  );
+  if(!installable) return;
   event.preventDefault();
   window.__timeOffInstallPrompt=event;
   window.dispatchEvent(new Event("timeoff-install-ready"));
@@ -435,9 +456,9 @@ button{
 
 <div id="pwaInstallBar" class="pwaInstallBar hidden">
   <div class="pwaInstallInner">
-    <img class="pwaInstallIcon" src="/admin-icon-192.png" alt="">
+    <img id="pwaInstallIcon" class="pwaInstallIcon" src="/admin-icon-192.png" alt="">
     <div class="pwaInstallCopy">
-      <div class="pwaInstallTitle">Install Manager Time Off</div>
+      <div id="pwaInstallTitle" class="pwaInstallTitle">Install Manager Time Off</div>
       <div id="pwaInstallText" class="pwaInstallText">Add the admin dashboard to this phone for quicker access.</div>
       <div class="pwaInstallActions">
         <button id="pwaInstallButton" class="primary" type="button">Install app</button>
@@ -1278,37 +1299,69 @@ function isAppleMobile(){
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-async function registerAdminServiceWorker(){
-  if(location.pathname!=="/admin") return;
+function isAdminAppRoute(){
+  return location.pathname === "/admin";
+}
+
+function isRequestAppRoute(){
+  return (
+    location.pathname === "/rothwell" ||
+    location.pathname === "/rothwell/" ||
+    location.pathname === "/request/rothwell-a14-eastbound"
+  );
+}
+
+function currentPwaKind(){
+  if(isAdminAppRoute()) return "admin";
+  if(isRequestAppRoute()) return "request";
+  return "";
+}
+
+async function registerTimeOffServiceWorker(){
+  if(!currentPwaKind()) return;
   if(!("serviceWorker" in navigator)) return;
   try{
     await navigator.serviceWorker.register(
-      "/admin-service-worker.js",
+      "/manager-time-off-service-worker.js",
       {scope:"/"}
     );
   }catch(error){
-    console.warn("Admin service worker registration failed",error);
+    console.warn("Manager Time Off service worker registration failed",error);
   }
 }
 
 function updateNetworkStatus(){
   const banner=$("networkBanner");
   if(!banner) return;
-  const showOffline =
-    location.pathname==="/admin" &&
-    !navigator.onLine;
+
+  const kind=currentPwaKind();
+  const showOffline=!!kind && !navigator.onLine;
+
+  if(kind==="request"){
+    banner.textContent="Offline — reconnect before submitting a request";
+  }else{
+    banner.textContent="Offline — reconnect before approving or changing requests";
+  }
+
   banner.classList.toggle("hidden",!showOffline);
 }
 
-function updateAdminInstallBar(){
+function updateInstallBar(){
   const bar=$("pwaInstallBar");
   if(!bar) return;
 
-  if(
-    location.pathname !== "/admin" ||
-    isStandaloneApp() ||
-    sessionStorage.getItem("timeOffInstallDismissed") === "1"
-  ){
+  const kind=currentPwaKind();
+  if(!kind || isStandaloneApp()){
+    bar.classList.add("hidden");
+    return;
+  }
+
+  const dismissKey=
+    kind==="request"
+      ? "managerRequestsInstallDismissed"
+      : "timeOffInstallDismissed";
+
+  if(sessionStorage.getItem(dismissKey)==="1"){
     bar.classList.add("hidden");
     return;
   }
@@ -1321,10 +1374,21 @@ function updateAdminInstallBar(){
     return;
   }
 
-  $("pwaInstallText").textContent=
-    apple
-      ? "On iPhone/iPad: tap Share, then Add to Home Screen, then Open as Web App."
-      : "Add the admin dashboard to this phone for quicker access.";
+  if(kind==="request"){
+    $("pwaInstallIcon").src="/request-icon-192.png";
+    $("pwaInstallTitle").textContent="Install Manager Requests";
+    $("pwaInstallText").textContent=
+      apple
+        ? "On iPhone/iPad: tap Share, then Add to Home Screen, then Open as Web App."
+        : "Add the manager request form to this phone for quicker holiday and Day Off requests.";
+  }else{
+    $("pwaInstallIcon").src="/admin-icon-192.png";
+    $("pwaInstallTitle").textContent="Install Manager Time Off";
+    $("pwaInstallText").textContent=
+      apple
+        ? "On iPhone/iPad: tap Share, then Add to Home Screen, then Open as Web App."
+        : "Add the admin dashboard to this phone for quicker access.";
+  }
 
   $("pwaInstallButton").textContent=
     apple && !canPrompt
@@ -1334,18 +1398,30 @@ function updateAdminInstallBar(){
   bar.classList.remove("hidden");
 }
 
-async function installManagerTimeOff(){
+async function installCurrentTimeOffApp(){
+  const kind=currentPwaKind();
   const promptEvent=window.__timeOffInstallPrompt;
 
   if(isAppleMobile() && !promptEvent){
-    alert(
-      "To install Manager Time Off on iPhone or iPad:\n\n" +
-      "1. Open this Admin page in Safari.\n" +
-      "2. Tap the Share button.\n" +
-      "3. Tap Add to Home Screen.\n" +
-      "4. Turn on Open as Web App if shown.\n" +
-      "5. Tap Add."
-    );
+    if(kind==="request"){
+      alert(
+        "To install Manager Requests on iPhone or iPad:\n\n" +
+        "1. Open the manager request page in Safari.\n" +
+        "2. Tap the Share button.\n" +
+        "3. Tap Add to Home Screen.\n" +
+        "4. Turn on Open as Web App if shown.\n" +
+        "5. Tap Add."
+      );
+    }else{
+      alert(
+        "To install Manager Time Off on iPhone or iPad:\n\n" +
+        "1. Open this Admin page in Safari.\n" +
+        "2. Tap the Share button.\n" +
+        "3. Tap Add to Home Screen.\n" +
+        "4. Turn on Open as Web App if shown.\n" +
+        "5. Tap Add."
+      );
+    }
     return;
   }
 
@@ -1354,16 +1430,22 @@ async function installManagerTimeOff(){
   await promptEvent.prompt();
   try{await promptEvent.userChoice;}catch{}
   window.__timeOffInstallPrompt=null;
-  updateAdminInstallBar();
+  updateInstallBar();
 }
 
-$("pwaInstallButton")?.addEventListener("click",installManagerTimeOff);
+$("pwaInstallButton")?.addEventListener("click",installCurrentTimeOffApp);
 $("pwaInstallDismiss")?.addEventListener("click",()=>{
-  sessionStorage.setItem("timeOffInstallDismissed","1");
-  updateAdminInstallBar();
+  const kind=currentPwaKind();
+  sessionStorage.setItem(
+    kind==="request"
+      ? "managerRequestsInstallDismissed"
+      : "timeOffInstallDismissed",
+    "1"
+  );
+  updateInstallBar();
 });
 
-window.addEventListener("timeoff-install-ready",updateAdminInstallBar);
+window.addEventListener("timeoff-install-ready",updateInstallBar);
 window.addEventListener("appinstalled",()=>{
   window.__timeOffInstallPrompt=null;
   $("pwaInstallBar")?.classList.add("hidden");
@@ -1371,7 +1453,7 @@ window.addEventListener("appinstalled",()=>{
 window.addEventListener("online",updateNetworkStatus);
 window.addEventListener("offline",updateNetworkStatus);
 
-registerAdminServiceWorker();
+registerTimeOffServiceWorker();
 updateNetworkStatus();
 
 
@@ -1423,6 +1505,9 @@ async function route(){
 
   const p =
     location.pathname;
+
+  updateInstallBar();
+  updateNetworkStatus();
 
   if(
     isStandaloneApp() &&
