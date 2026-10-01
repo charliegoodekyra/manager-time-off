@@ -37,3 +37,7 @@ No D1 / SQL migration is required.
 6. Tap **Add**.
 
 The new **Manager Requests** Home Screen icon will open straight into the Rothwell manager holiday / Day Off request page.
+
+
+## v1.3 icon update
+The Manager Requests app now uses a clearly different blue person/request icon from the Manager Time Off admin app. New icon filenames are used to avoid iOS Home Screen icon caching.

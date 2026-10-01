@@ -31,8 +31,8 @@
 
   if(requestRoute){
     document.getElementById("appManifest").href="/request-manifest.webmanifest";
-    document.getElementById("appIcon").href="/request-icon-192.png";
-    document.getElementById("appleTouchIcon").href="/request-icon-180.png";
+    document.getElementById("appIcon").href="/manager-request-icon-v2-192.png";
+    document.getElementById("appleTouchIcon").href="/manager-request-icon-v2-180.png";
     document.getElementById("appleAppTitle").content="Manager Requests";
   }else if(p!=="/admin"){
     document.getElementById("appManifest")?.remove();
@@ -1375,7 +1375,7 @@ function updateInstallBar(){
   }
 
   if(kind==="request"){
-    $("pwaInstallIcon").src="/request-icon-192.png";
+    $("pwaInstallIcon").src="/manager-request-icon-v2-192.png";
     $("pwaInstallTitle").textContent="Install Manager Requests";
     $("pwaInstallText").textContent=
       apple
