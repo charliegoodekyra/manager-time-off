@@ -1,1 +1,0 @@
-Installable web app for the manager admin page.
