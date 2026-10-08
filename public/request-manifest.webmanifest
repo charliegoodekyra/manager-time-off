@@ -1,10 +1,10 @@
 {
-  "id": "/manager-requests-rothwell-v3",
+  "id": "/manager-requests-rothwell-v4",
   "name": "Manager Requests",
   "short_name": "Requests",
   "description": "Submit manager holiday and day-off requests for Rothwell A14 Eastbound.",
-  "start_url": "/request/rothwell-a14-eastbound?source=request-pwa-v3",
-  "scope": "/",
+  "start_url": "/request/rothwell-a14-eastbound?source=request-pwa-v4",
+  "scope": "/request/",
   "display": "standalone",
   "display_override": [
     "standalone",
