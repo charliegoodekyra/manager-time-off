@@ -1,4 +1,4 @@
-const CACHE_NAME = "manager-time-off-pwa-v3";
+const CACHE_NAME = "manager-time-off-pwa-v4";
 const STATIC_ASSETS = [
   "/admin-offline.html",
   "/admin-manifest.webmanifest",
@@ -43,6 +43,19 @@ self.addEventListener("fetch", event => {
   if(url.pathname.startsWith("/api/")) return;
 
   if(request.mode === "navigate"){
+    // A legacy/cached Manager Requests Home Screen install can incorrectly
+    // launch at the site root. Never allow that root launch to fall through
+    // to the SPA's old standalone fallback, which sends it to /admin.
+    if(url.pathname === "/"){
+      event.respondWith(
+        Response.redirect(
+          new URL("/request/rothwell-a14-eastbound?source=root-pwa-recovery-v4", self.location.origin).href,
+          302
+        )
+      );
+      return;
+    }
+
     if(url.pathname === "/admin"){
       event.respondWith(
         fetch(request).catch(() => caches.match("/admin-offline.html"))
