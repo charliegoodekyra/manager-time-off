@@ -1,4 +1,4 @@
-const CACHE_NAME = "manager-time-off-pwa-v2";
+const CACHE_NAME = "manager-time-off-pwa-v3";
 const STATIC_ASSETS = [
   "/admin-offline.html",
   "/admin-manifest.webmanifest",
@@ -7,9 +7,9 @@ const STATIC_ASSETS = [
   "/admin-icon-512.png",
   "/request-offline.html",
   "/request-manifest.webmanifest",
-  "/request-icon-180.png",
-  "/request-icon-192.png",
-  "/request-icon-512.png"
+  "/manager-request-icon-v2-180.png",
+  "/manager-request-icon-v2-192.png",
+  "/manager-request-icon-v2-512.png"
 ];
 
 self.addEventListener("install", event => {
