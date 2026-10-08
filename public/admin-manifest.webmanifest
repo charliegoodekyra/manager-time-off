@@ -3,8 +3,8 @@
   "name": "Manager Time Off",
   "short_name": "Time Off",
   "description": "Manager holiday and day-off administration for Rothwell A14 Eastbound.",
-  "start_url": "/admin?source=pwa",
-  "scope": "/",
+  "start_url": "/admin?source=pwa-v4",
+  "scope": "/admin",
   "display": "standalone",
   "display_override": [
     "standalone",
